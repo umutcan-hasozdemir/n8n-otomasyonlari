@@ -1,0 +1,185 @@
+{
+  "name": "AI İş Avcısı v2.0 - Interaktif Sektör Seçimi",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🎯 AI İş Avcısı v2.0\n\nTelegram komutları:\n- /sektor software-dev\n- /sektor marketing\n- /sektorler (mevcut sektorleri goster)\n- /ara (manuel tetikle)\n\nDesteklenen sektorler: software-dev, marketing, design, data, devops-sysadmin, customer-support, finance-legal, hr, product, qa, writing",
+        "height": 320, "width": 450, "color": 4
+      },
+      "id": "sticky-1", "name": "Sticky Note", "type": "n8n-nodes-base.stickyNote", "typeVersion": 1, "position": [40, -40]
+    },
+    {
+      "parameters": { "updates": ["message"] },
+      "id": "node-tg-trigger",
+      "name": "Telegram Komut",
+      "type": "n8n-nodes-base.telegramTrigger", "typeVersion": 1.1, "position": [80, 300],
+      "webhookId": "is-avcisi-cmd",
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const msg=$input.all()[0].json.message||$input.all()[0].json;\nconst text=(msg.text||'').trim();\nconst chatId=msg.chat?msg.chat.id:'';\n\nconst sektorMap={'software-dev':'Yazilim Gelistirme','marketing':'Pazarlama','design':'Tasarim','data':'Veri Bilimi','devops-sysadmin':'DevOps','customer-support':'Musteri Destek','finance-legal':'Finans/Hukuk','hr':'Insan Kaynaklari','product':'Urun Yonetimi','qa':'Kalite/Test','writing':'Icerik/Yazarlik'};\n\nlet komut='gecersiz',data={};\nif(text.startsWith('/sektor ')){komut='sektor';const s=text.replace('/sektor ','').trim();data={Ayar:'sektor',Deger:s,Aciklama:sektorMap[s]||s,sektor:s,sektorAdi:sektorMap[s]||s};}\nelse if(text==='/sektorler'){komut='sektorler';data={liste:Object.entries(sektorMap).map(([k,v])=>k+' → '+v).join('\\n')};}\nelse if(text==='/ara'){komut='ara';}\nreturn [{json:{komut,chatId,...data}}];"
+      },
+      "id": "node-parse", "name": "Komutu Ayristir", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "rules": { "values": [
+          { "conditions": { "conditions": [{ "leftValue": "={{ $json.komut }}", "rightValue": "sektor", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "sektor" },
+          { "conditions": { "conditions": [{ "leftValue": "={{ $json.komut }}", "rightValue": "sektorler", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "sektorler" },
+          { "conditions": { "conditions": [{ "leftValue": "={{ $json.komut }}", "rightValue": "ara", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "ara" }
+        ] },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "node-switch", "name": "Komut Yonlendir", "type": "n8n-nodes-base.switch", "typeVersion": 3, "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "GOOGLE_SHEETS_DOCUMENT_ID_BURAYA", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Ayarlar", "mode": "name" },
+        "columns": { "mappingMode": "defineBelow", "value": { "Ayar": "sektor", "Deger": "={{ $json.sektor }}", "Aciklama": "={{ $json.sektorAdi }}" } },
+        "options": {}
+      },
+      "id": "node-update-sector", "name": "Sektor Guncelle", "type": "n8n-nodes-base.googleSheets", "typeVersion": 4, "position": [780, 160]
+    },
+    {
+      "parameters": { "chatId": "={{ $('Komutu Ayristir').item.json.chatId }}", "text": "=✅ Sektor guncellendi!\n\n🔍 Yeni sektor: {{ $('Komutu Ayristir').item.json.sektor }}\n📌 {{ $('Komutu Ayristir').item.json.sektorAdi }}\n\nBir sonraki aramada bu sektor kullanilacak.", "additionalFields": {} },
+      "id": "node-confirm-sector", "name": "Sektor Onayi", "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [1020, 160],
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": { "chatId": "={{ $json.chatId }}", "text": "=📋 MEVCUT SEKTORLER:\\n━━━━━━━━━━━━━━━━━━━━\\n{{ $json.liste }}\\n━━━━━━━━━━━━━━━━━━━━\\nKullanim: /sektor software-dev", "additionalFields": {} },
+      "id": "node-show-sectors", "name": "Sektorleri Goster", "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [780, 320],
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": { "chatId": "={{ $json.chatId }}", "text": "⚠️ Gecersiz komut!\n/sektor software-dev\n/sektorler\n/ara", "additionalFields": {} },
+      "id": "node-invalid", "name": "Gecersiz Komut", "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [780, 480],
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "0 */6 * * *" }] } },
+      "id": "node-schedule", "name": "Her 6 Saatte", "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [80, 680]
+    },
+    {
+      "parameters": {
+        "operation": "readRows",
+        "documentId": { "__rl": true, "value": "GOOGLE_SHEETS_DOCUMENT_ID_BURAYA", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Ayarlar", "mode": "name" },
+        "options": {}
+      },
+      "id": "node-read-settings", "name": "Ayarlari Oku", "type": "n8n-nodes-base.googleSheets", "typeVersion": 4, "position": [300, 680]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Son eklenen degeri kullan (en alttaki satir guncel ayar)\nconst items=$input.all();\nlet ayarlar={};\nitems.forEach(item=>{\n  const ayar=item.json['Ayar']||'';\n  const deger=item.json['Deger']||'';\n  if(ayar)ayarlar[ayar]=deger;\n});\n\nconst sektor=ayarlar['sektor']||'software-dev';\nconst profil={\n  pozisyon:ayarlar['pozisyon']||'Full Stack Developer',\n  deneyim:ayarlar['deneyim']||'2',\n  beceriler:ayarlar['beceriler']||'JavaScript,React,Node.js,Python,SQL,Git',\n  roller:ayarlar['roller']||'Frontend Developer,Full Stack Developer,Web Developer'\n};\n\nreturn [{json:{sektor,profil,remotiveUrl:'https://remotive.com/api/remote-jobs?category='+sektor+'&limit=15'}}];"
+      },
+      "id": "node-prep", "name": "Ayarlari Hazirla", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [520, 680]
+    },
+    {
+      "parameters": { "url": "={{ $json.remotiveUrl }}", "options": { "timeout": 15000 } },
+      "id": "node-remotive", "name": "Remotive API", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [740, 680]
+    },
+    {
+      "parameters": { "url": "https://www.arbeitnow.com/api/job-board-api", "options": { "timeout": 15000 } },
+      "id": "node-arbeitnow", "name": "Arbeitnow API", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [960, 680]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const profil=$('Ayarlari Hazirla').first().json.profil;\nconst remotiveRaw=$('Remotive API').first().json;\nconst arbeitnowRaw=$('Arbeitnow API').first().json;\nlet ilanlar=[];\nif(remotiveRaw.jobs&&remotiveRaw.jobs.length>0){remotiveRaw.jobs.slice(0,10).forEach(j=>{const a=(j.description||'').replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').replace(/[\\r\\n]+/g,' ').replace(/\"/g,\"'\").trim().substring(0,250);ilanlar.push({kaynak:'Remotive',baslik:(j.title||'').replace(/\"/g,\"'\"),sirket:(j.company_name||'').replace(/\"/g,\"'\"),url:j.url||'',etiketler:(j.tags||[]).join(', '),aciklama:a});});}\nif(arbeitnowRaw.data&&arbeitnowRaw.data.length>0){arbeitnowRaw.data.slice(0,10).forEach(j=>{const a=(j.description||'').replace(/<[^>]*>/g,' ').replace(/\\s+/g,' ').replace(/[\\r\\n]+/g,' ').replace(/\"/g,\"'\").trim().substring(0,250);ilanlar.push({kaynak:'Arbeitnow',baslik:(j.title||'').replace(/\"/g,\"'\"),sirket:(j.company_name||'').replace(/\"/g,\"'\"),url:j.url||'',etiketler:(j.tags||[]).join(', '),aciklama:a});});}\nconst ozetler=ilanlar.map((il,i)=>(i+1)+'. ['+il.kaynak+'] '+il.baslik+' - '+il.sirket+(il.etiketler?' | '+il.etiketler:'')+' -- '+il.aciklama).join(' ||| ');\nconst promptText='Sen kariyer danismanisin. Turkce yanit ver. PROFIL: '+profil.pozisyon+', '+profil.deneyim+' yil, Beceriler: '+profil.beceriler+', Roller: '+profil.roller+'. ILANLAR ('+ilanlar.length+'): '+ozetler+'. Her ilan icin JSON dondur [{sira,uygunluk_puani:1-10,eslesen_beceriler:[],neden,basvuru_tavsiyesi}] SADECE JSON.';\nreturn [{json:{promptText,ilanlar,toplamIlan:ilanlar.length,tarih:new Date().toLocaleDateString('tr-TR')}}];"
+      },
+      "id": "node-merge", "name": "Ilanlari Topla", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1180, 680]
+    },
+    {
+      "parameters": { "amount": 3, "unit": "seconds" },
+      "id": "node-wait", "name": "Bekle", "type": "n8n-nodes-base.wait", "typeVersion": 1.1, "position": [1400, 680]
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=BURAYA_GEMINI_API_KEY_GIRIN",
+        "method": "POST", "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\":[{\"parts\":[{\"text\":\"{{ $('Ilanlari Topla').item.json.promptText }}\"}]}],\n  \"generationConfig\":{\"temperature\":0.3,\"maxOutputTokens\":2048}\n}",
+        "options": { "timeout": 45000 }
+      },
+      "id": "node-gemini", "name": "Gemini Analiz", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1620, 680]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const gemini=$input.all()[0].json;const ilanlar=$('Ilanlari Topla').first().json.ilanlar;const tarih=$('Ilanlari Topla').first().json.tarih;\nlet analizler=[];\ntry{let m=gemini.candidates[0].content.parts[0].text;const j=m.match(/\\[\\s*\\{[\\s\\S]*\\}\\s*\\]/);if(j)analizler=JSON.parse(j[0]);}catch(e){analizler=ilanlar.map((_,i)=>({sira:i+1,uygunluk_puani:5,eslesen_beceriler:[],neden:'Analiz okunamadi',basvuru_tavsiyesi:'Manuel kontrol'}));}\nconst sonuclar=[];\nfor(let i=0;i<ilanlar.length;i++){const a=analizler[i]||{uygunluk_puani:0};sonuclar.push({json:{tarih,kaynak:ilanlar[i].kaynak,baslik:ilanlar[i].baslik,sirket:ilanlar[i].sirket,url:ilanlar[i].url,uygunluk_puani:a.uygunluk_puani||0,eslesen_beceriler:(a.eslesen_beceriler||[]).join(', '),neden:a.neden||'',tavsiye:a.basvuru_tavsiyesi||'',kategori:a.uygunluk_puani>=7?'Yuksek':a.uygunluk_puani>=4?'Orta':'Dusuk'}});}\nsonuclar.sort((a,b)=>b.json.uygunluk_puani-a.json.uygunluk_puani);\nreturn sonuclar;"
+      },
+      "id": "node-parse-result", "name": "Sonuc Ayristir", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1840, 680]
+    },
+    {
+      "parameters": {
+        "conditions": { "conditions": [{ "id": "c1", "leftValue": "={{ $json.uygunluk_puani }}", "rightValue": 7, "operator": { "type": "number", "operation": "gte" } }], "combinator": "and" },
+        "options": {}
+      },
+      "id": "node-if", "name": "Yuksek Eslesme?", "type": "n8n-nodes-base.if", "typeVersion": 2, "position": [2060, 680]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "GOOGLE_SHEETS_DOCUMENT_ID_BURAYA", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Yüksek Eşleşmeler", "mode": "name" },
+        "columns": { "mappingMode": "defineBelow", "value": { "Tarih":"={{ $json.tarih }}","Kaynak":"={{ $json.kaynak }}","İlan Başlığı":"={{ $json.baslik }}","Şirket":"={{ $json.sirket }}","Uygunluk Puanı":"={{ $json.uygunluk_puani }}","Eşleşen Beceriler":"={{ $json.eslesen_beceriler }}","Neden":"={{ $json.neden }}","Tavsiye":"={{ $json.tavsiye }}","URL":"={{ $json.url }}","Durum":"Yeni" } },
+        "options": {}
+      },
+      "id": "node-sheets-high", "name": "Yuksek Kayit", "type": "n8n-nodes-base.googleSheets", "typeVersion": 4, "position": [2300, 560]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items=$input.all();\nlet mesaj='🎯 YUKSEK ESLESMELI IS ILANLARI!\\n━━━━━━━━━━━━━━━━━━━━\\n\\n';\nitems.forEach((item,i)=>{const d=item.json;mesaj+=(i+1)+'. ⭐ Puan: '+d.uygunluk_puani+'/10\\n   📌 '+d.baslik+'\\n   🏢 '+d.sirket+' ['+d.kaynak+']\\n   🎯 '+d.eslesen_beceriler+'\\n   💡 '+d.neden+'\\n   🔗 '+d.url+'\\n\\n';});\nmesaj+='━━━━━━━━━━━━━━━━━━━━\\n'+items.length+' eslesme | 🤖 Gemini AI';\nreturn [{json:{mesaj}}];"
+      },
+      "id": "node-format-tg", "name": "Mesaj Hazirla", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [2520, 560]
+    },
+    {
+      "parameters": { "chatId": "TELEGRAM_CHAT_ID_BURAYA", "text": "={{ $json.mesaj }}", "additionalFields": {} },
+      "id": "node-tg-notify", "name": "Telegram Bildir", "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [2740, 560],
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "GOOGLE_SHEETS_DOCUMENT_ID_BURAYA", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Tüm İlanlar Arşivi", "mode": "name" },
+        "columns": { "mappingMode": "defineBelow", "value": { "Tarih":"={{ $json.tarih }}","Kaynak":"={{ $json.kaynak }}","İlan Başlığı":"={{ $json.baslik }}","Şirket":"={{ $json.sirket }}","Uygunluk Puanı":"={{ $json.uygunluk_puani }}","Kategori":"={{ $json.kategori }}","Neden":"={{ $json.neden }}","URL":"={{ $json.url }}" } },
+        "options": {}
+      },
+      "id": "node-sheets-archive", "name": "Arsiv Kayit", "type": "n8n-nodes-base.googleSheets", "typeVersion": 4, "position": [2300, 800]
+    }
+  ],
+  "connections": {
+    "Telegram Komut": { "main": [[{ "node": "Komutu Ayristir", "type": "main", "index": 0 }]] },
+    "Komutu Ayristir": { "main": [[{ "node": "Komut Yonlendir", "type": "main", "index": 0 }]] },
+    "Komut Yonlendir": { "main": [
+      [{ "node": "Sektor Guncelle", "type": "main", "index": 0 }],
+      [{ "node": "Sektorleri Goster", "type": "main", "index": 0 }],
+      [{ "node": "Ayarlari Oku", "type": "main", "index": 0 }],
+      [{ "node": "Gecersiz Komut", "type": "main", "index": 0 }]
+    ]},
+    "Sektor Guncelle": { "main": [[{ "node": "Sektor Onayi", "type": "main", "index": 0 }]] },
+    "Her 6 Saatte": { "main": [[{ "node": "Ayarlari Oku", "type": "main", "index": 0 }]] },
+    "Ayarlari Oku": { "main": [[{ "node": "Ayarlari Hazirla", "type": "main", "index": 0 }]] },
+    "Ayarlari Hazirla": { "main": [[{ "node": "Remotive API", "type": "main", "index": 0 }]] },
+    "Remotive API": { "main": [[{ "node": "Arbeitnow API", "type": "main", "index": 0 }]] },
+    "Arbeitnow API": { "main": [[{ "node": "Ilanlari Topla", "type": "main", "index": 0 }]] },
+    "Ilanlari Topla": { "main": [[{ "node": "Bekle", "type": "main", "index": 0 }]] },
+    "Bekle": { "main": [[{ "node": "Gemini Analiz", "type": "main", "index": 0 }]] },
+    "Gemini Analiz": { "main": [[{ "node": "Sonuc Ayristir", "type": "main", "index": 0 }]] },
+    "Sonuc Ayristir": { "main": [[{ "node": "Yuksek Eslesme?", "type": "main", "index": 0 }]] },
+    "Yuksek Eslesme?": { "main": [
+      [{ "node": "Yuksek Kayit", "type": "main", "index": 0 }],
+      [{ "node": "Arsiv Kayit", "type": "main", "index": 0 }]
+    ]},
+    "Yuksek Kayit": { "main": [[{ "node": "Mesaj Hazirla", "type": "main", "index": 0 }]] },
+    "Mesaj Hazirla": { "main": [[{ "node": "Telegram Bildir", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false }
+}

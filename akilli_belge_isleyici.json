@@ -1,0 +1,125 @@
+{
+  "name": "Akıllı Belge İşleyici - AI OCR v1.0",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 📸 Akıllı Belge İşleyici\n\nTelegram'dan fotoğraf veya PDF atın, Gemini AI otomatik okur ve Google Sheets'e kaydeder.\n\n**Desteklenen:** Fotoğraf + PDF\n**Belge türleri:** Fatura, Fiş, Kartvizit, Reçete, Form\n**Kullanım:** Bot'a fotoğraf/PDF atın, açıklamaya belge türünü yazın",
+        "height": 280, "width": 450, "color": 4
+      },
+      "id": "sticky-info", "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote", "typeVersion": 1, "position": [40, -20]
+    },
+    {
+      "parameters": {
+        "content": "## ⚙️ Kurulum\n1. Telegram Bot credential baglayin\n2. Code node'daki BOT_TOKEN'i girin\n3. Gemini API Key girin\n4. Google Sheets ID girin",
+        "height": 200, "width": 350, "color": 6
+      },
+      "id": "sticky-setup", "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote", "typeVersion": 1, "position": [520, -20]
+    },
+    {
+      "parameters": { "updates": ["message"] },
+      "id": "node-trigger", "name": "Telegram Fotograf Al",
+      "type": "n8n-nodes-base.telegramTrigger", "typeVersion": 1.1,
+      "position": [80, 340], "webhookId": "belge-isleyici-webhook",
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const msg = $input.all()[0].json.message || $input.all()[0].json;\nconst photo = msg.photo;\nconst doc = msg.document;\nconst chatId = msg.chat ? msg.chat.id : '';\nconst caption = msg.caption || msg.text || '';\nconst botToken = 'BURAYA_BOT_TOKEN_GIRIN';\n\n// PDF kontrolu\nif (doc && doc.mime_type === 'application/pdf') {\n  const fileId = doc.file_id;\n  return [{\n    json: {\n      hasFile: true, fileType: 'pdf', fileId, chatId, caption, botToken,\n      fileName: doc.file_name || 'belge.pdf',\n      getFileUrl: 'https://api.telegram.org/bot' + botToken + '/getFile?file_id=' + fileId\n    }\n  }];\n}\n\n// Fotograf kontrolu\nif (photo && photo.length > 0) {\n  const fileId = photo[photo.length - 1].file_id;\n  return [{\n    json: {\n      hasFile: true, fileType: 'photo', fileId, chatId, caption, botToken,\n      fileName: 'photo.jpg',\n      getFileUrl: 'https://api.telegram.org/bot' + botToken + '/getFile?file_id=' + fileId\n    }\n  }];\n}\n\nreturn [{ json: { hasFile: false, chatId, mesaj: '📎 Lutfen bir fotograf veya PDF gonderin!\\n\\nDesteklenen belgeler:\\n📄 Fatura / Fis\\n💳 Kartvizit\\n💊 Recete\\n📋 Form\\n📑 PDF Belge\\n\\nIpucu: Aciklamaya belge turunu yazin (ör: fatura)' } }];"
+      },
+      "id": "node-extract", "name": "Fotograf Bilgileri",
+      "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [300, 340]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "id": "has-file", "leftValue": "={{ $json.hasFile }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }],
+          "combinator": "and"
+        }, "options": {}
+      },
+      "id": "node-if-photo", "name": "Fotograf var mi?",
+      "type": "n8n-nodes-base.if", "typeVersion": 2, "position": [520, 340]
+    },
+    {
+      "parameters": { "url": "={{ $json.getFileUrl }}", "options": { "timeout": 15000 } },
+      "id": "node-getfile", "name": "Dosya Yolunu Al",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [740, 240]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/file/bot{{ $('Fotograf Bilgileri').item.json.botToken }}/{{ $json.result.file_path }}",
+        "options": { "timeout": 30000, "response": { "response": { "responseFormat": "file" } } }
+      },
+      "id": "node-download", "name": "Fotografi Indir",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [960, 240]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nconst binaryKey = Object.keys(items[0].binary || {})[0];\n\nif (!binaryKey) {\n  return [{ json: { error: 'Binary data bulunamadi' } }];\n}\n\nconst binaryData = items[0].binary[binaryKey];\nlet base64Data = '';\ntry {\n  const buffer = await this.helpers.getBinaryDataBuffer(0, binaryKey);\n  base64Data = buffer.toString('base64');\n} catch(e) {\n  if (binaryData.data && binaryData.data.length > 100) {\n    base64Data = binaryData.data;\n  } else {\n    return [{ json: { error: 'Base64 cevrimi basarisiz: ' + e.message } }];\n  }\n}\n\nconst fileType = $('Fotograf Bilgileri').first().json.fileType;\nlet mimeType = binaryData.mimeType || 'image/jpeg';\n\n// Dosya turune gore mimeType belirle\nif (fileType === 'pdf') {\n  mimeType = 'application/pdf';\n} else if (mimeType === 'application/octet-stream') {\n  mimeType = 'image/jpeg';\n}\n\nconst chatId = $('Fotograf Bilgileri').first().json.chatId;\nconst caption = $('Fotograf Bilgileri').first().json.caption || '';\nconst fileName = $('Fotograf Bilgileri').first().json.fileName || '';\n\nlet docType = 'genel';\nconst lower = caption.toLowerCase();\nif (lower.includes('fatura') || lower.includes('fis')) docType = 'fatura';\nelse if (lower.includes('kartvizit') || lower.includes('card')) docType = 'kartvizit';\nelse if (lower.includes('recete') || lower.includes('ilac')) docType = 'recete';\nelse if (lower.includes('form') || lower.includes('basvuru')) docType = 'form';\n\nlet promptText = '';\nif (docType === 'fatura') {\n  promptText = 'Bu bir fatura veya fis belgesidir. Icerigini analiz et ve su bilgileri JSON olarak cikar: {firma_adi, tarih, toplam_tutar, kdv_tutar, kalemler: [{urun, adet, birim_fiyat, toplam}], odeme_yontemi, fatura_no}. SADECE JSON dondur.';\n} else if (docType === 'kartvizit') {\n  promptText = 'Bu bir kartvizit belgesidir. Icerigini analiz et ve su bilgileri JSON olarak cikar: {ad_soyad, unvan, sirket, telefon, email, adres, website}. SADECE JSON dondur.';\n} else if (docType === 'recete') {\n  promptText = 'Bu bir recete belgesidir. Icerigini analiz et ve su bilgileri JSON olarak cikar: {doktor_adi, hasta_adi, tarih, ilaclar: [{ilac_adi, dozaj, kullanim_sekli, sure}], tani}. SADECE JSON dondur.';\n} else if (docType === 'form') {\n  promptText = 'Bu bir form belgesidir. Formdaki tum alanlari ve degerlerini JSON olarak cikar: {alan_adi: deger} formatinda. SADECE JSON dondur.';\n} else {\n  promptText = 'Bu bir belge. Belgedeki TUM metni ve bilgileri oku. Belge turunu tespit et. Tum icerigi yapilandirilmis JSON formatinda dondur: {belge_turu, sayfa_sayisi, icerik: {anahtar: deger seklinde TUM bilgiler}, tablo_verileri: [{satir verisi}] eger tablo varsa}. SADECE JSON dondur. Hicbir bilgiyi atlama.';\n}\n\nreturn [{ json: { base64Data, mimeType, chatId, docType, promptText, fileType, fileName } }];"
+      },
+      "id": "node-prepare", "name": "Gemini Vision Hazirla",
+      "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1180, 240]
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=BURAYA_GEMINI_API_KEY_GIRIN",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "Content-Type", "value": "application/json; charset=utf-8" }] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{\n    \"parts\": [\n      { \"text\": \"{{ $json.promptText }}\" },\n      { \"inline_data\": { \"mime_type\": \"{{ $json.mimeType }}\", \"data\": \"{{ $json.base64Data }}\" } }\n    ]\n  }],\n  \"generationConfig\": { \"temperature\": 0.2, \"maxOutputTokens\": 4096 }\n}",
+        "options": { "timeout": 90000 }
+      },
+      "id": "node-gemini", "name": "Gemini Vision Analiz",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1400, 240]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const gemini = $input.all()[0].json;\nconst chatId = $('Gemini Vision Hazirla').first().json.chatId;\nconst docType = $('Gemini Vision Hazirla').first().json.docType;\nconst fileType = $('Gemini Vision Hazirla').first().json.fileType;\nconst fileName = $('Gemini Vision Hazirla').first().json.fileName;\nconst tarih = new Date().toLocaleDateString('tr-TR');\nconst saat = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });\n\nlet jsonData = {};\nlet rawText = '';\n\ntry {\n  rawText = gemini.candidates[0].content.parts[0].text;\n  const jsonMatch = rawText.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) jsonData = JSON.parse(jsonMatch[0]);\n} catch (e) {\n  jsonData = { hata: 'JSON ayristirilamadi', ham_metin: rawText ? rawText.substring(0, 500) : 'Yanit alinamadi' };\n}\n\nconst sheetsData = { Tarih: tarih, Saat: saat, 'Belge Turu': docType, 'Dosya Tipi': fileType.toUpperCase(), 'Dosya Adi': fileName };\n\nfunction flatten(obj, prefix) {\n  for (const key of Object.keys(obj)) {\n    const val = obj[key];\n    const newKey = prefix ? prefix + '_' + key : key;\n    if (Array.isArray(val)) {\n      sheetsData[newKey] = val.map(item => typeof item === 'object' ? Object.values(item).join(' | ') : String(item)).join(' /// ');\n    } else if (typeof val === 'object' && val !== null) {\n      flatten(val, newKey);\n    } else {\n      sheetsData[newKey] = String(val || '');\n    }\n  }\n}\nflatten(jsonData, '');\n\nconst icon = fileType === 'pdf' ? '📑' : '📸';\nlet mesaj = icon + ' BELGE BASARIYLA ISLENDI!\\n📅 ' + tarih + ' ' + saat + '\\n📄 Tur: ' + docType + ' | ' + fileType.toUpperCase() + '\\n';\nif (fileName) mesaj += '📎 Dosya: ' + fileName + '\\n';\nmesaj += '━━━━━━━━━━━━━━━━━━━━\\n\\n';\n\nfor (const key of Object.keys(jsonData)) {\n  const val = jsonData[key];\n  if (Array.isArray(val)) {\n    mesaj += '📌 ' + key + ':\\n';\n    val.forEach((item, i) => { mesaj += '  ' + (i+1) + '. ' + (typeof item === 'object' ? Object.values(item).join(' | ') : item) + '\\n'; });\n  } else if (typeof val === 'object' && val !== null) {\n    mesaj += '📌 ' + key + ': ' + JSON.stringify(val) + '\\n';\n  } else {\n    mesaj += '📌 ' + key + ': ' + val + '\\n';\n  }\n}\nmesaj += '\\n━━━━━━━━━━━━━━━━━━━━\\n✅ Google Sheets kaydedildi\\n🤖 Gemini Vision AI';\n\nreturn [{ json: { ...sheetsData, chatId, mesaj } }];"
+      },
+      "id": "node-parse", "name": "Sonuclari Ayristir",
+      "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1620, 240]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "GOOGLE_SHEETS_DOCUMENT_ID_BURAYA", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Belgeler", "mode": "name" },
+        "options": {},
+        "columns": { "mappingMode": "autoMapInputData" }
+      },
+      "id": "node-sheets", "name": "Google Sheets Kaydet",
+      "type": "n8n-nodes-base.googleSheets", "typeVersion": 4, "position": [1840, 240]
+    },
+    {
+      "parameters": { "chatId": "={{ $json.chatId }}", "text": "={{ $json.mesaj }}", "additionalFields": {} },
+      "id": "node-telegram-reply", "name": "Onay Gonder",
+      "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [2060, 240],
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": { "chatId": "={{ $json.chatId }}", "text": "={{ $json.mesaj }}", "additionalFields": {} },
+      "id": "node-telegram-nophoto", "name": "Fotograf Yok Uyarisi",
+      "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [740, 460],
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    }
+  ],
+  "connections": {
+    "Telegram Fotograf Al": { "main": [[{ "node": "Fotograf Bilgileri", "type": "main", "index": 0 }]] },
+    "Fotograf Bilgileri": { "main": [[{ "node": "Fotograf var mi?", "type": "main", "index": 0 }]] },
+    "Fotograf var mi?": { "main": [[{ "node": "Dosya Yolunu Al", "type": "main", "index": 0 }], [{ "node": "Fotograf Yok Uyarisi", "type": "main", "index": 0 }]] },
+    "Dosya Yolunu Al": { "main": [[{ "node": "Fotografi Indir", "type": "main", "index": 0 }]] },
+    "Fotografi Indir": { "main": [[{ "node": "Gemini Vision Hazirla", "type": "main", "index": 0 }]] },
+    "Gemini Vision Hazirla": { "main": [[{ "node": "Gemini Vision Analiz", "type": "main", "index": 0 }]] },
+    "Gemini Vision Analiz": { "main": [[{ "node": "Sonuclari Ayristir", "type": "main", "index": 0 }]] },
+    "Sonuclari Ayristir": { "main": [[{ "node": "Google Sheets Kaydet", "type": "main", "index": 0 }]] },
+    "Google Sheets Kaydet": { "main": [[{ "node": "Onay Gonder", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false }
+}

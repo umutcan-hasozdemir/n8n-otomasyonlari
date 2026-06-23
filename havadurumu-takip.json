@@ -1,0 +1,66 @@
+{
+  "name": "Gaziantep Hava Durumu Uyarı Botu",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "triggerAtHour": 7,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.open-meteo.com/v1/forecast?latitude=37.0662&longitude=37.3833&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max&timezone=Europe%2FIstanbul&forecast_days=1",
+        "options": {}
+      },
+      "id": "http1",
+      "name": "Hava Durumu API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = $json;\n\nconst maxTemp = data.daily.temperature_2m_max[0];\nconst minTemp = data.daily.temperature_2m_min[0];\nconst precipitation = data.daily.precipitation_sum[0];\nconst windSpeed = data.daily.windspeed_10m_max[0];\nconst date = data.daily.time[0];\n\nconst dateObj = new Date(date);\nconst options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };\nconst turkishDate = dateObj.toLocaleDateString('tr-TR', options);\n\nconst warnings = [];\n\nif (minTemp < 2) {\n  warnings.push(`🥶 DON UYARISI!\\nGece sıcaklığı ${minTemp}°C'ye düşecek.\\nBitkilerinizi koruyun, borularınızı kontrol edin!`);\n}\n\nif (maxTemp > 38) {\n  warnings.push(`🔥 AŞIRI SICAK UYARISI!\\nGündüz sıcaklığı ${maxTemp}°C'ye çıkacak.\\nBol su için, güneşten korunun!`);\n}\n\nif (precipitation > 10) {\n  warnings.push(`🌧️ YAĞMUR UYARISI!\\nBeklenen yağış: ${precipitation} mm\\nŞemsiyenizi almayı unutmayın!`);\n}\n\nif (windSpeed > 50) {\n  warnings.push(`🌪️ FIRTINA UYARISI!\\nRüzgar hızı: ${windSpeed} km/s\\nDışarıda dikkatli olun, gevşek eşyaları sabitleyin!`);\n}\n\nlet message = '';\n\nif (warnings.length > 0) {\n  message = `⚠️ GAZİANTEP HAVA DURUMU UYARI ⚠️\\n`;\n  message += `📅 ${turkishDate}\\n`;\n  message += `━━━━━━━━━━━━━━━━━━━━━\\n\\n`;\n  message += warnings.join('\\n\\n');\n  message += `\\n\\n━━━━━━━━━━━━━━━━━━━━━\\n`;\n  message += `📊 Günlük Özet:\\n`;\n  message += `🌡️ Sıcaklık: ${minTemp}°C / ${maxTemp}°C\\n`;\n  message += `🌧️ Yağış: ${precipitation} mm\\n`;\n  message += `💨 Rüzgar: ${windSpeed} km/s`;\n} else {\n  message = `☀️ GAZİANTEP GÜNLÜK HAVA DURUMU\\n`;\n  message += `📅 ${turkishDate}\\n`;\n  message += `━━━━━━━━━━━━━━━━━━━━━\\n\\n`;\n  message += `✅ Bugün için herhangi bir uyarı bulunmuyor.\\n\\n`;\n  message += `🌡️ En Düşük: ${minTemp}°C\\n`;\n  message += `🌡️ En Yüksek: ${maxTemp}°C\\n`;\n  message += `🌧️ Yağış: ${precipitation} mm\\n`;\n  message += `💨 Rüzgar: ${windSpeed} km/s\\n\\n`;\n  message += `İyi günler! 🌤️`;\n}\n\nreturn [{ json: { message, warnings: warnings.length, maxTemp, minTemp, precipitation, windSpeed } }];"
+      },
+      "id": "code1",
+      "name": "Analiz ve Mesaj",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "CHAT_ID",
+        "text": "={{ $json.message }}"
+      },
+      "id": "tg1",
+      "name": "Telegram Gönder",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [800, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Hava Durumu API", "type": "main", "index": 0 }]]
+    },
+    "Hava Durumu API": {
+      "main": [[{ "node": "Analiz ve Mesaj", "type": "main", "index": 0 }]]
+    },
+    "Analiz ve Mesaj": {
+      "main": [[{ "node": "Telegram Gönder", "type": "main", "index": 0 }]]
+    }
+  }
+}

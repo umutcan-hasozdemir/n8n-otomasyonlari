@@ -1,0 +1,245 @@
+{
+  "name": "Marka & Rakip İstihbarat Sistemi v2.0 - Interaktif",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🔍 Marka İstihbarat v2.0\n\nTelegram komutları:\n- /ekle MarkaAdi,Sektor,Rakip1-Rakip2\n- /sil MarkaAdi\n- /liste\n- /analiz (manuel tetikle)",
+        "height": 260, "width": 420, "color": 4
+      },
+      "id": "sticky-1", "name": "Sticky Note", "type": "n8n-nodes-base.stickyNote", "typeVersion": 1, "position": [40, -40]
+    },
+    {
+      "parameters": { "updates": ["message"] },
+      "id": "node-tg-trigger",
+      "name": "Telegram Komut Al",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [80, 300],
+      "webhookId": "marka-istihbarat-cmd",
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const msg = $input.all()[0].json.message || $input.all()[0].json;\nconst text = (msg.text || '').trim();\nconst chatId = msg.chat ? msg.chat.id : '';\n\nlet komut = 'bilinmiyor';\nlet data = {};\n\nif (text.startsWith('/ekle ')) {\n  komut = 'ekle';\n  const parts = text.replace('/ekle ', '').split(',');\n  data = {\n    markaAdi: (parts[0] || '').trim(),\n    sektor: (parts[1] || 'Genel').trim(),\n    rakipler: (parts[2] || '').trim().replace(/-/g, ', ')\n  };\n} else if (text.startsWith('/sil ')) {\n  komut = 'sil';\n  data = { markaAdi: text.replace('/sil ', '').trim() };\n} else if (text === '/liste') {\n  komut = 'liste';\n} else if (text === '/analiz') {\n  komut = 'analiz';\n} else {\n  komut = 'gecersiz';\n}\n\nreturn [{ json: { komut, chatId, ...data } }];"
+      },
+      "id": "node-parse-cmd",
+      "name": "Komutu Ayristir",
+      "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "rules": { "values": [
+          { "conditions": { "conditions": [{ "leftValue": "={{ $json.komut }}", "rightValue": "ekle", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "ekle" },
+          { "conditions": { "conditions": [{ "leftValue": "={{ $json.komut }}", "rightValue": "sil", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "sil" },
+          { "conditions": { "conditions": [{ "leftValue": "={{ $json.komut }}", "rightValue": "liste", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "liste" },
+          { "conditions": { "conditions": [{ "leftValue": "={{ $json.komut }}", "rightValue": "analiz", "operator": { "type": "string", "operation": "equals" } }] }, "renameOutput": true, "outputKey": "analiz" }
+        ] },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "node-switch",
+      "name": "Komut Yonlendir",
+      "type": "n8n-nodes-base.switch", "typeVersion": 3, "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "GOOGLE_SHEETS_DOCUMENT_ID_BURAYA", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Marka Listesi", "mode": "name" },
+        "columns": { "mappingMode": "defineBelow", "value": { "Marka Adi": "={{ $json.markaAdi }}", "Sektor": "={{ $json.sektor }}", "Rakipler": "={{ $json.rakipler }}" } },
+        "options": {}
+      },
+      "id": "node-add-brand",
+      "name": "Marka Ekle",
+      "type": "n8n-nodes-base.googleSheets", "typeVersion": 4, "position": [780, 120]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Komutu Ayristir').item.json.chatId }}",
+        "text": "=✅ Marka eklendi!\n\n🏢 {{ $('Komutu Ayristir').item.json.markaAdi }}\n📊 Sektor: {{ $('Komutu Ayristir').item.json.sektor }}\n🏁 Rakipler: {{ $('Komutu Ayristir').item.json.rakipler }}\n\nBir sonraki analizde dahil edilecek.",
+        "additionalFields": {}
+      },
+      "id": "node-confirm-add",
+      "name": "Ekleme Onayi",
+      "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [1020, 120],
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "documentId": { "__rl": true, "value": "GOOGLE_SHEETS_DOCUMENT_ID_BURAYA", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Marka Listesi", "mode": "name" },
+        "filtersUI": { "values": [{ "lookupColumn": "Marka Adi", "lookupValue": "={{ $json.markaAdi }}" }] },
+        "options": {}
+      },
+      "id": "node-del-brand",
+      "name": "Marka Sil",
+      "type": "n8n-nodes-base.googleSheets", "typeVersion": 4, "position": [780, 280]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Komutu Ayristir').item.json.chatId }}",
+        "text": "=🗑️ {{ $('Komutu Ayristir').item.json.markaAdi }} silindi!",
+        "additionalFields": {}
+      },
+      "id": "node-confirm-del",
+      "name": "Silme Onayi",
+      "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [1020, 280],
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "operation": "readRows",
+        "documentId": { "__rl": true, "value": "GOOGLE_SHEETS_DOCUMENT_ID_BURAYA", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Marka Listesi", "mode": "name" },
+        "options": {}
+      },
+      "id": "node-read-list",
+      "name": "Liste Oku",
+      "type": "n8n-nodes-base.googleSheets", "typeVersion": 4, "position": [780, 440]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nconst chatId = $('Komutu Ayristir').first().json.chatId;\nlet mesaj = '📋 IZLENEN MARKALAR\\n━━━━━━━━━━━━━━━━━━━━\\n\\n';\nif (items.length === 0) {\n  mesaj += 'Henuz marka eklenmemis. /ekle komutu ile ekleyin.';\n} else {\n  items.forEach((item, i) => {\n    const d = item.json;\n    mesaj += (i+1) + '. 🏢 ' + (d['Marka Adi'] || '') + '\\n';\n    mesaj += '   📊 ' + (d['Sektor'] || '') + '\\n';\n    mesaj += '   🏁 Rakipler: ' + (d['Rakipler'] || '-') + '\\n\\n';\n  });\n}\nmesaj += '━━━━━━━━━━━━━━━━━━━━\\nToplam: ' + items.length + ' marka';\nreturn [{ json: { mesaj, chatId } }];"
+      },
+      "id": "node-format-list",
+      "name": "Liste Formatla",
+      "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1020, 440]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.mesaj }}",
+        "additionalFields": {}
+      },
+      "id": "node-send-list",
+      "name": "Liste Gonder",
+      "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [1260, 440],
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 8,20 * * *" }] }
+      },
+      "id": "node-schedule",
+      "name": "Zamanlanmis Analiz",
+      "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [80, 660]
+    },
+    {
+      "parameters": {
+        "operation": "readRows",
+        "documentId": { "__rl": true, "value": "GOOGLE_SHEETS_DOCUMENT_ID_BURAYA", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Marka Listesi", "mode": "name" },
+        "options": {}
+      },
+      "id": "node-read-brands",
+      "name": "Markalari Oku",
+      "type": "n8n-nodes-base.googleSheets", "typeVersion": 4, "position": [300, 660]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nreturn items.map(item => ({\n  json: {\n    markaAdi: item.json['Marka Adi'] || '',\n    sektor: item.json['Sektor'] || '',\n    rakipler: item.json['Rakipler'] || '',\n    rssUrl: 'https://news.google.com/rss/search?q=' + encodeURIComponent(item.json['Marka Adi'] || '') + '&hl=tr&gl=TR&ceid=TR:tr'\n  }\n}));"
+      },
+      "id": "node-prep-rss",
+      "name": "RSS URL Hazirla",
+      "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [520, 660]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.rssUrl }}",
+        "options": { "timeout": 15000, "response": { "response": { "responseFormat": "text" } } }
+      },
+      "id": "node-rss",
+      "name": "Google News RSS",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [740, 660]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nconst markaBilgileri = $('RSS URL Hazirla').all();\nconst markaHaberleri = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const marka = markaBilgileri[i]?.json || {};\n  const rawData = items[i].json;\n  let xmlText = typeof rawData === 'string' ? rawData : (rawData.data || JSON.stringify(rawData));\n\n  const haberler = [];\n  const itemRegex = /<item>(.*?)<\\/item>/gs;\n  let match, count = 0;\n  while ((match = itemRegex.exec(xmlText)) !== null && count < 5) {\n    const titleMatch = match[1].match(/<title>(.*?)<\\/title>/);\n    const sourceMatch = match[1].match(/<source[^>]*>(.*?)<\\/source>/);\n    if (titleMatch) {\n      haberler.push({ baslik: titleMatch[1].replace(/<[^>]*>/g, '').replace(/\"/g, \"'\"), kaynak: sourceMatch ? sourceMatch[1].replace(/\"/g, \"'\") : '' });\n      count++;\n    }\n  }\n  markaHaberleri.push({ marka: marka.markaAdi, sektor: marka.sektor, rakipler: marka.rakipler, haberler });\n}\n\nconst bloklar = markaHaberleri.map(m => {\n  const hList = m.haberler.length > 0 ? m.haberler.map((h, i) => (i+1) + '. ' + h.baslik + ' (' + h.kaynak + ')').join(', ') : 'Haber bulunamadi';\n  return m.marka + ' (' + m.sektor + ') Rakipler: ' + m.rakipler + ' Haberler: ' + hList;\n}).join(' ||| ');\n\nconst promptText = 'Sen profesyonel bir is istihbarat analistisin. Turkce yanit ver. ' + markaHaberleri.length + ' markayi analiz et: ' + bloklar + '. Her marka icin JSON dizisi dondur (SADECE JSON): [{marka, genel_duygu: pozitif/negatif/notr, duygu_puani: 1-10, risk_seviyesi: dusuk/orta/yuksek/kritik, ana_tema, onemli_gelismeler: [], riskler: [], firsatlar: [], rakip_karsilastirma, eylem_onerisi}]';\n\nreturn [{ json: { promptText, markaHaberleri, toplamMarka: markaHaberleri.length } }];"
+      },
+      "id": "node-prep-prompt",
+      "name": "Haberleri Isle",
+      "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [960, 660]
+    },
+    {
+      "parameters": { "amount": 3, "unit": "seconds" },
+      "id": "node-wait", "name": "Bekle", "type": "n8n-nodes-base.wait", "typeVersion": 1.1, "position": [1180, 660]
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=BURAYA_GEMINI_API_KEY_GIRIN",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "Content-Type", "value": "application/json; charset=utf-8" }] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{ \"parts\": [{ \"text\": \"{{ $('Haberleri Isle').item.json.promptText }}\" }] }],\n  \"generationConfig\": { \"temperature\": 0.3, \"maxOutputTokens\": 2048 }\n}",
+        "options": { "timeout": 45000 }
+      },
+      "id": "node-gemini", "name": "Gemini Analiz", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [1400, 660]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function fixTR(t){if(!t)return '';return t.replace(/谋/g,'i').replace(/艧/g,'s').replace(/眉/g,'u').replace(/莽/g,'c').replace(/臒/g,'g').replace(/芒/g,'a').replace(/脺/g,'U').replace(/枚/g,'o');}\nconst gemini=$input.all()[0].json;\nconst tarih=new Date().toLocaleDateString('tr-TR');\nconst saat=new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});\nlet analizler=[];\ntry{let m=fixTR(gemini.candidates[0].content.parts[0].text);const j=m.match(/\\[\\s*\\{[\\s\\S]*\\}\\s*\\]/);if(j)analizler=JSON.parse(j[0]);}catch(e){analizler=[{marka:'Hata',genel_duygu:'notr',duygu_puani:5,risk_seviyesi:'dusuk',ana_tema:'Analiz okunamadi',onemli_gelismeler:[],riskler:[],firsatlar:[],rakip_karsilastirma:'',eylem_onerisi:''}];}\nreturn analizler.map(a=>({json:{tarih,saat,marka:fixTR(a.marka||''),genel_duygu:a.genel_duygu||'notr',duygu_puani:a.duygu_puani||5,risk_seviyesi:a.risk_seviyesi||'dusuk',ana_tema:fixTR(a.ana_tema||''),gelismeler:(a.onemli_gelismeler||[]).map(x=>fixTR(x)).join(' | '),riskler:(a.riskler||[]).map(x=>fixTR(x)).join(' | '),firsatlar:(a.firsatlar||[]).map(x=>fixTR(x)).join(' | '),rakip_notu:fixTR(a.rakip_karsilastirma||''),eylem:fixTR(a.eylem_onerisi||''),kritik_mi:(a.risk_seviyesi==='kritik'||a.risk_seviyesi==='yuksek')}}));"
+      },
+      "id": "node-parse", "name": "Sonuc Ayristir", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [1620, 660]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "GOOGLE_SHEETS_DOCUMENT_ID_BURAYA", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "İstihbarat Dashboard", "mode": "name" },
+        "columns": { "mappingMode": "defineBelow", "value": { "Tarih":"={{ $json.tarih }}","Saat":"={{ $json.saat }}","Marka":"={{ $json.marka }}","Duygu":"={{ $json.genel_duygu }}","Duygu Puanı":"={{ $json.duygu_puani }}","Risk":"={{ $json.risk_seviyesi }}","Ana Tema":"={{ $json.ana_tema }}","Gelişmeler":"={{ $json.gelismeler }}","Riskler":"={{ $json.riskler }}","Fırsatlar":"={{ $json.firsatlar }}","Rakip Notu":"={{ $json.rakip_notu }}","Eylem":"={{ $json.eylem }}" } },
+        "options": {}
+      },
+      "id": "node-sheets-dash", "name": "Dashboard Guncelle", "type": "n8n-nodes-base.googleSheets", "typeVersion": 4, "position": [1840, 660]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items=$('Sonuc Ayristir').all();\nconst tarih=items[0]?.json.tarih||'';const saat=items[0]?.json.saat||'';\nlet mesaj='📊 ISTIHBARAT RAPORU\\n📅 '+tarih+' '+saat+'\\n━━━━━━━━━━━━━━━━━━━━\\n\\n';\nitems.forEach(item=>{\n  const d=item.json;\n  const emoji=d.genel_duygu==='pozitif'?'🟢':d.genel_duygu==='negatif'?'🔴':'🟡';\n  mesaj+=emoji+' '+d.marka+' | Duygu: '+d.duygu_puani+'/10 | Risk: '+d.risk_seviyesi+'\\n';\n  mesaj+='   📌 '+d.ana_tema+'\\n';\n  if(d.gelismeler)mesaj+='   📰 '+d.gelismeler+'\\n';\n  mesaj+='\\n';\n});\nmesaj+='━━━━━━━━━━━━━━━━━━━━\\n'+items.length+' marka izlendi | 🤖 Gemini AI';\nreturn [{json:{mesaj}}];"
+      },
+      "id": "node-report", "name": "Rapor Hazirla", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [2060, 660]
+    },
+    {
+      "parameters": { "chatId": "TELEGRAM_CHAT_ID_BURAYA", "text": "={{ $json.mesaj }}", "additionalFields": {} },
+      "id": "node-tg-report", "name": "Rapor Gonder", "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [2280, 660],
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    },
+    {
+      "parameters": { "chatId": "={{ $json.chatId }}", "text": "⚠️ Gecersiz komut! Kullanilabilir komutlar:\n/ekle MarkaAdi,Sektor,Rakip1-Rakip2\n/sil MarkaAdi\n/liste\n/analiz", "additionalFields": {} },
+      "id": "node-invalid", "name": "Gecersiz Komut", "type": "n8n-nodes-base.telegram", "typeVersion": 1.2, "position": [780, 600],
+      "credentials": { "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" } }
+    }
+  ],
+  "connections": {
+    "Telegram Komut Al": { "main": [[{ "node": "Komutu Ayristir", "type": "main", "index": 0 }]] },
+    "Komutu Ayristir": { "main": [[{ "node": "Komut Yonlendir", "type": "main", "index": 0 }]] },
+    "Komut Yonlendir": { "main": [
+      [{ "node": "Marka Ekle", "type": "main", "index": 0 }],
+      [{ "node": "Marka Sil", "type": "main", "index": 0 }],
+      [{ "node": "Liste Oku", "type": "main", "index": 0 }],
+      [{ "node": "Markalari Oku", "type": "main", "index": 0 }],
+      [{ "node": "Gecersiz Komut", "type": "main", "index": 0 }]
+    ]},
+    "Marka Ekle": { "main": [[{ "node": "Ekleme Onayi", "type": "main", "index": 0 }]] },
+    "Marka Sil": { "main": [[{ "node": "Silme Onayi", "type": "main", "index": 0 }]] },
+    "Liste Oku": { "main": [[{ "node": "Liste Formatla", "type": "main", "index": 0 }]] },
+    "Liste Formatla": { "main": [[{ "node": "Liste Gonder", "type": "main", "index": 0 }]] },
+    "Zamanlanmis Analiz": { "main": [[{ "node": "Markalari Oku", "type": "main", "index": 0 }]] },
+    "Markalari Oku": { "main": [[{ "node": "RSS URL Hazirla", "type": "main", "index": 0 }]] },
+    "RSS URL Hazirla": { "main": [[{ "node": "Google News RSS", "type": "main", "index": 0 }]] },
+    "Google News RSS": { "main": [[{ "node": "Haberleri Isle", "type": "main", "index": 0 }]] },
+    "Haberleri Isle": { "main": [[{ "node": "Bekle", "type": "main", "index": 0 }]] },
+    "Bekle": { "main": [[{ "node": "Gemini Analiz", "type": "main", "index": 0 }]] },
+    "Gemini Analiz": { "main": [[{ "node": "Sonuc Ayristir", "type": "main", "index": 0 }]] },
+    "Sonuc Ayristir": { "main": [[{ "node": "Dashboard Guncelle", "type": "main", "index": 0 }]] },
+    "Dashboard Guncelle": { "main": [[{ "node": "Rapor Hazirla", "type": "main", "index": 0 }]] },
+    "Rapor Hazirla": { "main": [[{ "node": "Rapor Gonder", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false }
+}

@@ -1,0 +1,274 @@
+{
+  "name": "Omnichannel AI Operasyon Merkezi v1.0",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🎯 Omnichannel AI Operasyon Merkezi\n\nTelegram + Webhook kanallarından gelen müşteri mesajlarını\nGemini AI ile sınıflandırır, duygu analizi yapar,\notomatik yanıt verir ve kritik talepleri personele yönlendirir.\n\n**Kanallar:** Telegram, Webhook (Marketplace Simülasyonu)\n**AI:** Gemini 2.5 Flash Lite (Ücretsiz)\n**Kategoriler:** Şikayet, İade, Teşekkür, Teknik Destek, Kargo, Bilgi\n**Kurulum:** 2x Telegram Bot + Gemini Key + Google Sheets",
+        "height": 300,
+        "width": 480,
+        "color": 5
+      },
+      "id": "sticky-main",
+      "name": "Proje Bilgi",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [40, -80]
+    },
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "node-tg-trigger",
+      "name": "Müşteri Mesajı (Telegram)",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [80, 340],
+      "credentials": {
+        "telegramApi": {
+          "id": "MUSTERI_BOT_CREDENTIAL_ID",
+          "name": "Müşteri Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $input.first().json;\nconst message = msg.message || {};\nconst chatId = String(message.chat?.id || '');\nconst musteriAdi = ((message.from?.first_name || '') + ' ' + (message.from?.last_name || '')).trim();\nconst musteriId = String(message.from?.id || '');\nconst mesajMetni = message.text || '';\nconst tarih = new Date().toLocaleDateString('tr-TR');\nconst saat = new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit'});\nreturn [{json:{kanal:'Telegram',chatId,musteriAdi,musteriId,mesajMetni,tarih,saat}}];"
+      },
+      "id": "node-std-tg",
+      "name": "Telegram Standartlaştır",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [300, 340]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "musteri-talep",
+        "options": {},
+        "responseMode": "lastNode"
+      },
+      "id": "node-webhook",
+      "name": "Webhook (Marketplace)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [80, 560]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst kanal = body.kanal || 'Marketplace';\nconst chatId = body.chatId || '';\nconst musteriAdi = body.musteriAdi || body.musteri || 'Bilinmeyen';\nconst musteriId = body.musteriId || '';\nconst mesajMetni = body.mesaj || body.message || body.text || '';\nconst tarih = new Date().toLocaleDateString('tr-TR');\nconst saat = new Date().toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit'});\nreturn [{json:{kanal,chatId,musteriAdi,musteriId,mesajMetni,tarih,saat}}];"
+      },
+      "id": "node-std-wh",
+      "name": "Webhook Standartlaştır",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [300, 560]
+    },
+    {
+      "parameters": { "amount": 2, "unit": "seconds" },
+      "id": "node-wait",
+      "name": "Rate Limit",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [520, 440]
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=BURAYA_GEMINI_API_KEY",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json; charset=utf-8" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [{\"parts\":[{\"text\":\"Sen profesyonel bir musteri hizmetleri AI asistanisin. Turkce yanit ver. Asagidaki musteri mesajini analiz et. SADECE JSON formatinda yanit ver, baska hicbir metin yazma.\\n\\nKanal: {{ $json.kanal }}\\nMusteri: {{ $json.musteriAdi }}\\nMesaj: {{ $json.mesajMetni }}\\n\\nJSON formati:\\n{\\\"kategori\\\":\\\"Sikayet/Iade/Tesekkur/Teknik_Destek/Kargo/Bilgi/Diger\\\",\\\"duygu\\\":\\\"Sinirli/Memnun/Notr\\\",\\\"oncelik\\\":\\\"Yuksek/Orta/Dusuk\\\",\\\"ozet\\\":\\\"Kisa ozet\\\",\\\"oto_yanit\\\":true veya false,\\\"yanit\\\":\\\"Musteriye kibar profesyonel yanit\\\",\\\"eylem\\\":\\\"Personel icin eylem\\\"}\\n\\nKurallar: Sikayet+Sinirli=Yuksek oncelik ve oto_yanit false. Iade=en az Orta. Kargo/Bilgi sorulari=oto_yanit true.\"}]}],\n  \"generationConfig\":{\"temperature\":0.2,\"maxOutputTokens\":1024}\n}",
+        "options": { "timeout": 45000 }
+      },
+      "id": "node-gemini",
+      "name": "Gemini AI Analiz",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [740, 440]
+    },
+    {
+      "parameters": {
+        "jsCode": "const gemini = $input.first().json;\nconst prev = $('Rate Limit').first().json;\nlet a = {};\ntry {\n  let t = gemini.candidates[0].content.parts[0].text;\n  const m = t.match(/\\{[\\s\\S]*\\}/);\n  if (m) a = JSON.parse(m[0]);\n} catch(e) {\n  a = {kategori:'Diger',duygu:'Notr',oncelik:'Orta',ozet:'Analiz yapilamadi',oto_yanit:false,yanit:'',eylem:'Manuel kontrol'};\n}\nconst kritik = (a.oncelik==='Yuksek'||a.duygu==='Sinirli');\nconst otoOk = (a.oto_yanit===true && a.yanit && prev.kanal==='Telegram' && prev.chatId);\nreturn [{json:{...prev,kategori:a.kategori||'Diger',duygu:a.duygu||'Notr',oncelik:a.oncelik||'Orta',ozet:a.ozet||'',oto_yanit_durum:otoOk?'Evet':'Hayir',yanit:a.yanit||'',eylem:a.eylem||'',kritik,otoOk}}];"
+      },
+      "id": "node-parse",
+      "name": "Sonuçları Ayrıştır",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 440]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "GOOGLE_SHEETS_DOCUMENT_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Talep Log", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Tarih": "={{ $json.tarih }}",
+            "Saat": "={{ $json.saat }}",
+            "Kanal": "={{ $json.kanal }}",
+            "Musteri": "={{ $json.musteriAdi }}",
+            "Mesaj": "={{ $json.mesajMetni }}",
+            "Kategori": "={{ $json.kategori }}",
+            "Duygu": "={{ $json.duygu }}",
+            "Oncelik": "={{ $json.oncelik }}",
+            "Ozet": "={{ $json.ozet }}",
+            "Oto Yanit": "={{ $json.oto_yanit_durum }}",
+            "Onerilen Yanit": "={{ $json.yanit }}",
+            "Eylem": "={{ $json.eylem }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "node-sheets",
+      "name": "Sheets Talep Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1180, 440]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "id": "crit", "leftValue": "={{ $json.kritik }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-crit",
+      "name": "Kritik mi?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1400, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst de = d.duygu==='Sinirli'?'\\ud83d\\ude21':d.duygu==='Memnun'?'\\ud83d\\ude0a':'\\ud83d\\ude10';\nconst ke = {Sikayet:'\\ud83d\\udd34',Iade:'\\ud83d\\udfe0',Teknik_Destek:'\\ud83d\\udd27',Kargo:'\\ud83d\\udce6',Bilgi:'\\u2139\\ufe0f',Tesekkur:'\\ud83d\\udc9a',Diger:'\\u26aa'};\nconst k = ke[d.kategori]||'\\u26aa';\nlet m = '\\ud83d\\udea8 KRITIK MUSTERI TALEBI!\\n';\nm += '\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\n\\n';\nm += k+' Kategori: '+d.kategori+'\\n';\nm += de+' Duygu: '+d.duygu+'\\n';\nm += '\\u26a1 Oncelik: '+d.oncelik+'\\n';\nm += '\\ud83d\\udce1 Kanal: '+d.kanal+'\\n\\n';\nm += '\\ud83d\\udc64 Musteri: '+d.musteriAdi+'\\n';\nm += '\\ud83d\\udcac Mesaj: '+d.mesajMetni+'\\n\\n';\nm += '\\ud83d\\udcdd Ozet: '+d.ozet+'\\n';\nm += '\\ud83c\\udfaf Eylem: '+d.eylem+'\\n';\nif(d.yanit) m += '\\ud83d\\udca1 Onerilen Yanit: '+d.yanit+'\\n';\nm += '\\n\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\n';\nm += '\\ud83e\\udd16 AI Operasyon Merkezi | '+d.tarih+' '+d.saat;\nreturn [{json:{mesaj:m}}];"
+      },
+      "id": "node-fmt-staff",
+      "name": "Personel Bildirimi",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1620, 320]
+    },
+    {
+      "parameters": {
+        "chatId": "PERSONEL_CHAT_ID",
+        "text": "={{ $json.mesaj }}",
+        "additionalFields": {}
+      },
+      "id": "node-tg-staff",
+      "name": "Personele Bildir (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1840, 320],
+      "credentials": {
+        "telegramApi": {
+          "id": "PERSONEL_BOT_CREDENTIAL_ID",
+          "name": "Personel Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "id": "auto", "leftValue": "={{ $json.otoOk }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if-auto",
+      "name": "Oto Yanıt mı?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1400, 580]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nlet y = d.yanit + '\\n\\n\\u2139\\ufe0f Bu otomatik bir yanittir. Detayli destek icin ekibimiz en kisa surede donecektir.';\nreturn [{json:{yanit:y,chatId:d.chatId}}];"
+      },
+      "id": "node-fmt-auto",
+      "name": "Oto Yanıt Hazırla",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1620, 580]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.yanit }}",
+        "additionalFields": {}
+      },
+      "id": "node-tg-reply",
+      "name": "Müşteriye Yanıt (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1840, 580],
+      "credentials": {
+        "telegramApi": {
+          "id": "MUSTERI_BOT_CREDENTIAL_ID",
+          "name": "Müşteri Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Müşteri Mesajı (Telegram)": {
+      "main": [[{ "node": "Telegram Standartlaştır", "type": "main", "index": 0 }]]
+    },
+    "Telegram Standartlaştır": {
+      "main": [[{ "node": "Rate Limit", "type": "main", "index": 0 }]]
+    },
+    "Webhook (Marketplace)": {
+      "main": [[{ "node": "Webhook Standartlaştır", "type": "main", "index": 0 }]]
+    },
+    "Webhook Standartlaştır": {
+      "main": [[{ "node": "Rate Limit", "type": "main", "index": 0 }]]
+    },
+    "Rate Limit": {
+      "main": [[{ "node": "Gemini AI Analiz", "type": "main", "index": 0 }]]
+    },
+    "Gemini AI Analiz": {
+      "main": [[{ "node": "Sonuçları Ayrıştır", "type": "main", "index": 0 }]]
+    },
+    "Sonuçları Ayrıştır": {
+      "main": [[{ "node": "Sheets Talep Log", "type": "main", "index": 0 }]]
+    },
+    "Sheets Talep Log": {
+      "main": [
+        [
+          { "node": "Kritik mi?", "type": "main", "index": 0 },
+          { "node": "Oto Yanıt mı?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Kritik mi?": {
+      "main": [
+        [{ "node": "Personel Bildirimi", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Personel Bildirimi": {
+      "main": [[{ "node": "Personele Bildir (Telegram)", "type": "main", "index": 0 }]]
+    },
+    "Oto Yanıt mı?": {
+      "main": [
+        [{ "node": "Oto Yanıt Hazırla", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Oto Yanıt Hazırla": {
+      "main": [[{ "node": "Müşteriye Yanıt (Telegram)", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false }
+}

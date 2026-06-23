@@ -1,0 +1,878 @@
+{
+  "name": "Galeri Otomasyonu",
+  "nodes": [
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "contextWindowLength": 750
+      },
+      "id": "9ea961a2-c895-407b-b00c-25bb4a3a6ff0",
+      "name": "Window Buffer Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "position": [
+        1104,
+        672
+      ],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "ddfe6592-ac40-4bf4-8d80-c31f1f4a74b6",
+      "name": "Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "position": [
+        1728,
+        208
+      ],
+      "typeVersion": 1.1,
+      "webhookId": "68f6a6ed-f5a4-4a80-ace1-849b96ea134d",
+      "credentials": {
+        "telegramApi": {
+          "id": "xTaSN4JJejH191yT",
+          "name": "Galeri_Otomasyon_Bot"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "a0bf9719-4272-46f6-ab3b-eda6f7b44fd8",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.message.text }}",
+              "rightValue": ""
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "15eee0dc-d604-4565-ae2e-573a7fe7a306",
+      "name": "If",
+      "type": "n8n-nodes-base.if",
+      "position": [
+        432,
+        192
+      ],
+      "typeVersion": 2.2
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "options": {}
+      },
+      "id": "030bcb3f-412e-42f9-a64a-0174e3b5376e",
+      "name": "Speech to Text",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "position": [
+        800,
+        96
+      ],
+      "typeVersion": 1.3,
+      "credentials": {
+        "openAiApi": {
+          "id": "BXITVnqpKJqEbFoQ",
+          "name": "Galeri_Otomasyon_Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fields": {
+          "values": [
+            {
+              "name": "text",
+              "stringValue": "={{ $json?.message?.text || \"\" }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "20dc5d69-ee2f-4480-94ea-0c6239bfe5de",
+      "name": "Voice or Text",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        272,
+        192
+      ],
+      "typeVersion": 3.2
+    },
+    {
+      "parameters": {
+        "content": "",
+        "height": 375,
+        "width": 864,
+        "color": 4
+      },
+      "id": "ea27dfcc-f1a2-43f6-900e-6dc0cd46788d",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        240,
+        48
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "options": {
+          "systemMessage": "=Bugünün tarihi: {{ $now }}.\n\nSen, Hazar’ın kişisel oto galeri CRM asistanısın.\n\nGörevin:\n1. Google Sheets CRM’ini okumak (Read_CRM).\n2. Google Sheets satırlarını güncellemek/yazmak (Edit_CRM).\n3. Google Sheets satır(lar)ını silmek (Delete_CRM).\n\nCRM Yapısı\n\nmarka | seri | model | yil | km | fiyat | yakıt | vites | motorGucu | boya | degisen | uid\n\n•\tBirincil anahtar: uid (tam eşleşme).\n•\tUid kuralı: uid = Sıradaki uid numarasını \"Read_CRM\" ile kontrol et ve dinamik olarak sırayla devam etsin uid numarası.\n•\tİkincil eşleştirme sadece benzer kayıt göstermek içindir: marka + model.\n•\tTam eşleşme yoksa benzer kayıtları listele ve kullanıcıdan seçim/teyit iste.\n\nOverwrite Engelleyici Kurallar\n• Marka ile asla kayıt eşleştirme yapma.\n• Marka + model ile asla güncelleme veya silme yapma. Sadece benzer listelemek için kullan.\n• Yeni kayıt eklerken önce Read_CRM ile uid kontrol et.\n• Read_CRM sonucu uid tam eşleşme varsa yeni kayıt ekleme. “Bu araç zaten var, güncelleyelim mi?” diye sor.\n• Read_CRM sonucu uid tam eşleşme yoksa mevcut kaydı güncelleme. Yeni kayıt akışına gir.\n• Birden fazla benzer kayıt varsa seçim alınmadan Edit_CRM veya Delete_CRM çalıştırma.\n• Edit_CRM ile asla “yeni satır ekleme” yapma. Yeni kayıt için sadece Add_CRM kullan.\n• Add_CRM ile asla “var olan satırı güncelleme” yapma.\n\nTool Kullanım Sırası\n\nRead_CRM – İsteğe dair satır(lar) var mı?.\n• Arama, listeleme, detay gösterme, silme ve güncelleme işlemlerinde önce mutlaka Read_CRM kullan.\n• Read_CRM sonucunda kayıt yoksa bunu net söyle ve yeni kayıt eklemek isteyip istemediğini sor.\n\nAdd_CRM – Sadece kesinleşmiş şekilde yeni satır ekle.\n• Kullanıcı “evet / onaylıyorum” demeden Add_CRM çalıştırma.\n• Add_CRM başarısızsa “CRM’e yazamadım” de ve “eklendi” deme.\n\nEdit_CRM – Sadece kesinleşmiş kaydı güncelle.\n• Kullanıcı “evet / onaylıyorum” demeden Edit_CRM çalıştırma.\n• Edit_CRM başarısızsa “CRM’e yazamadım” de ve “güncellendi” deme.\n\nDelete_CRM – Sadece silinecek kayıt kesinleştiyse çalıştır.\n• Kullanıcı “sil / onaylıyorum” demeden Delete_CRM çalıştırma.\n• Delete_CRM başarısızsa “silindi” deme.\n\nVeri Formatlama Kuralları\n• Km alanı sayıysa ve içinde “km” yoksa sonuna “ km” ekle. Örnek: 150000 → 150.000 km.\n• Motor Gücü alanı sayıysa ve içinde “hp” yoksa sonuna “ hp” ekle. Örnek: 200 → 200 hp.\n• Fiyat alanı sayıysa ve içinde “TL” yoksa sonuna “ TL” ekle. Örnek: 2000000 → 2.000.000 TL.\n• Bu dönüşümleri CRM’e yazmadan önce uygula. Kullanıcı yazdıysa değiştirme, sadece eksik birim varsa tamamla.\n\nKapsam Dışı İstekler\n• Soru oto galeri araç CRM kapsamı dışında ise kısa cevap ver:\n“Bu konu araç CRM kapsamım dışında. İstersen araç ekleme, güncelleme, silme veya listeleme konusunda yardımcı olayım.”\n• Kapsam dışı soruyu CRM’e eklemeyi teklif etme. Yeni araç ekleme akışına zorlama.\n• Kullanıcı açıkça “bunu da CRM’e araç olarak ekle” derse ancak o zaman Yeni Araç Ekleme Akışı’nı başlat ve bunun bir araç kaydı olacağını net söyle.\n\nİş Tipleri\n• Yeni araç ekleme.\n• Araç bilgisi güncelleme.\n• Araç arama.\n• Listeleme.\n• Araç silme.\n\nYeni Araç Ekleme Akışı\n• Kullanıcı “yeni araç ekle” derse araç bilgilerini iste.\n• İstenen alanlar:\n\nMarka\nSeri\nModel\nYıl\nKm\nFiyat\nYakıt\nVites\nMotor Gücü\nBoya\nDeğişen\n\n• Kullanıcı bazı alanları cümle içinde verdiyse onları doldur, eksik varsa da sor.\n• Tüm alanlar geldiyse uid üret ve Read_CRM ile uid tam eşleşme kontrolü yap.\n• Varsa kullanıcıya “Bu araç zaten var, güncelleyelim mi?” diye sor.\n• Yoksa özet çıkar ve onay iste.\n• Onay gelince Add_CRM ile ekle.\n• Add_CRM başarısızsa “CRM’e yazamadım” de ve hata olduğunu söyle, “eklendi” deme.\n\nGüncelleme Akışı\n• Kullanıcı “fiyat güncelle, km güncelle, boya/değişen güncelle” gibi isterse önce Read_CRM ile hedef aracı bul.\n• Tam eşleşme yoksa benzer kayıtları listele ve seçim iste.\n• Hedef kayıt kesinleşince uid üzerinden işlem yap.\n• Hangi alanların değişeceğini özetle ve onay iste.\n• Onay gelince Edit_CRM çalıştır.\n\nSilme Akışı\n• Kullanıcı “satıldı, sil” derse önce Read_CRM ile aracı bul.\n• Belirsizse benzer kayıtları listele ve “Hangisini siliyorum?” diye sor.\n• Kayıt kesinleşince uid üzerinden işlem yap.\n• Tek cümlelik özet ver ve onay iste.\n• Onay gelince Delete_CRM çalıştır.\n• Delete_CRM başarısızsa “silindi” deme.\n\nListeleme ve Görüntüleme\n• Liste isterse Read_CRM ile çek ve madde madde yaz.\n• Madde madde yazarken arada bir boşluk bırak.\n• Alt alta yazarken bir boşluk bırak.\n• Kullanıcı “detay ver” derse seçilen aracın tüm alanlarını alt alta yaz.\n\nYanıt Stili\n• Kısa ve net yaz.\n• Cümleleri nokta ile bitir.\n• Madde işareti olarak • kullan.\n• Aynı bilgiyi aynı mesajda iki kez isteme.\n• Birden fazla seçenek varsa numaralandırma yapmadan, madde madde seçenek ver ve “Hangisi?” diye sor.\n\nHata & Belirsizlik Yönetimi\n• Marka/seri/model belirsizse benzer kayıtları göster ve teyit iste.\n• Alakasız soru gelince “işine geri dön” kuralı\n• Tool hatası alırsan bunu saklama, kısa bir cümleyle söyle.\n• Tool hata verdiyse “eklendi / silindi / güncellendi” deme.\n• CRM’de olmayan bir alan istenirse “Bu bilgi CRM’de yok, ekleyelim mi?” diye sor.\n\nBu kurallara uyarak her isteği ilgili tool çağrılarıyla sonuçlandır ve en sonda kısa bir özet ver."
+        }
+      },
+      "id": "d9c1f9f4-9c2d-42d8-a429-efb04082ab6e",
+      "name": "AI Assistant",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        1216,
+        208
+      ],
+      "typeVersion": 1.6
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=- Bu node sadece mevcut kaydı günceller, yeni kayıt eklemez.\n\n- Önce Read_CRM ile tam eşleşme bulunmalı.\n\n- Birden fazla benzer varsa seçim almadan güncelleme yapma.\n\n- Sadece değişen alanları güncelle\n\n- Güncellemeden önce özet göster, onay al.",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1cVtjNFl1gVHERRGqu10Lmg0sT6SeTwQZy9xlLZOtbtA",
+          "mode": "list",
+          "cachedResultName": "Galeri Otomasyon Excel",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cVtjNFl1gVHERRGqu10Lmg0sT6SeTwQZy9xlLZOtbtA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 310333988,
+          "mode": "list",
+          "cachedResultName": "Sheet-1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cVtjNFl1gVHERRGqu10Lmg0sT6SeTwQZy9xlLZOtbtA/edit#gid=310333988"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "seri": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('seri', ``, 'string') }}",
+            "model": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('model', ``, 'string') }}",
+            "vites": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('vites', ``, 'string') }}",
+            "motorGucu": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('motorGucu', ``, 'string') }}",
+            "yil": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('yil', ``, 'string') }}",
+            "km": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('km', ``, 'string') }}",
+            "yakit": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('yakit', ``, 'string') }}",
+            "fiyat": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('fiyat', ``, 'string') }}",
+            "degisen": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('degisen', ``, 'string') }}",
+            "boya": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('boya', ``, 'string') }}",
+            "marka": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('marka', ``, 'string') }}",
+            "uid": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('uid__using_to_match_', ``, 'string') }}"
+          },
+          "matchingColumns": [
+            "uid"
+          ],
+          "schema": [
+            {
+              "id": "uid",
+              "displayName": "uid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "marka",
+              "displayName": "marka",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "seri",
+              "displayName": "seri",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "model",
+              "displayName": "model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "vites",
+              "displayName": "vites",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "motorGucu",
+              "displayName": "motorGucu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "yil",
+              "displayName": "yil",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "yakit",
+              "displayName": "yakit",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "km",
+              "displayName": "km",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "fiyat",
+              "displayName": "fiyat",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "degisen",
+              "displayName": "degisen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "boya",
+              "displayName": "boya",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        1456,
+        672
+      ],
+      "id": "59c4e14c-c815-434a-bb6d-c57af97d6431",
+      "name": "Edit_CRM",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "E5vo2bo5jTA2G5mm",
+          "name": "Galeri_Otomasyon_Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "CRM Google Sheet’ini okur ve koşula uyan satırları geri döndürür. Yeni bir işlem yapmadan önce daima bu araçla mevcut veriyi doğrula veya potansiyel eşleşmeleri listele.\n",
+        "documentId": {
+          "__rl": true,
+          "value": "1cVtjNFl1gVHERRGqu10Lmg0sT6SeTwQZy9xlLZOtbtA",
+          "mode": "list",
+          "cachedResultName": "Galeri Otomasyon Excel",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cVtjNFl1gVHERRGqu10Lmg0sT6SeTwQZy9xlLZOtbtA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 310333988,
+          "mode": "list",
+          "cachedResultName": "Sheet-1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cVtjNFl1gVHERRGqu10Lmg0sT6SeTwQZy9xlLZOtbtA/edit#gid=310333988"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        1600,
+        672
+      ],
+      "id": "70b11d99-69aa-49bc-a4f6-561632af66a7",
+      "name": "Read_CRM",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "E5vo2bo5jTA2G5mm",
+          "name": "Galeri_Otomasyon_Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        928,
+        672
+      ],
+      "id": "13388295-8c44-4d4d-9fdd-eeff2b83d38d",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "BXITVnqpKJqEbFoQ",
+          "name": "Galeri_Otomasyon_Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f2d5ab00-ca9c-431f-adcf-bd1ff7913cfa",
+              "name": "text",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        960,
+        208
+      ],
+      "id": "62873f96-fef7-4d91-9cb6-8a946aeac2e5",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "content": "",
+        "height": 368,
+        "width": 224,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        0,
+        80
+      ],
+      "typeVersion": 1,
+      "id": "9d901d51-c54b-4d6d-959d-1aa5ada49176",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "",
+        "height": 368,
+        "width": 320,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1168,
+        80
+      ],
+      "typeVersion": 1,
+      "id": "e8221776-8642-443c-9fc2-79520b45fdcc",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "",
+        "height": 295,
+        "width": 1040,
+        "color": 4
+      },
+      "id": "330abfb9-1496-4ae5-97c1-9a7213a7b50c",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        832,
+        560
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "CRM Google Sheet’inde \"araba satıldı\" veya \"2.satırı silelim\" gibi benzer ifadelerle var olan satırı siler. Satır kimliğini ya da benzersiz kriter(ler)i kullanarak hedef kaydı seçer; ardından yalnızca gerekli alanları siler.",
+        "operation": "delete",
+        "documentId": {
+          "__rl": true,
+          "value": "1cVtjNFl1gVHERRGqu10Lmg0sT6SeTwQZy9xlLZOtbtA",
+          "mode": "list",
+          "cachedResultName": "Galeri Otomasyon Excel",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cVtjNFl1gVHERRGqu10Lmg0sT6SeTwQZy9xlLZOtbtA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 310333988,
+          "mode": "list",
+          "cachedResultName": "Sheet-1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cVtjNFl1gVHERRGqu10Lmg0sT6SeTwQZy9xlLZOtbtA/edit#gid=310333988"
+        },
+        "startIndex": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Start_Row_Number', ``, 'number') }}"
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        1744,
+        672
+      ],
+      "id": "624a3238-5699-4a90-8bc6-cd201f317391",
+      "name": "Delete_CRM",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "E5vo2bo5jTA2G5mm",
+          "name": "Galeri_Otomasyon_Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=- Bu node sadece yeni satır ekler, mevcut satırı güncellemez.\n\n- Sadece Read_CRM’de tam eşleşme yoksa çalışır.\n\n- Eklemeden önce kullanıcıya özet göster, onay al.\n\n- Eksik alan varsa tek seferde iste, tamamlanmadan çalıştırma.\n\n- Alanlar: marka, seri, model, yil, km, fiyat, yakit, vites, motorGucu, boya, degisen.\n\nYani Add_CRM = sadece yeni kayıt.",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1cVtjNFl1gVHERRGqu10Lmg0sT6SeTwQZy9xlLZOtbtA",
+          "mode": "list",
+          "cachedResultName": "Galeri Otomasyon Excel",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cVtjNFl1gVHERRGqu10Lmg0sT6SeTwQZy9xlLZOtbtA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 310333988,
+          "mode": "list",
+          "cachedResultName": "Sheet-1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cVtjNFl1gVHERRGqu10Lmg0sT6SeTwQZy9xlLZOtbtA/edit#gid=310333988"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "marka": "={{ $fromAI('marka', ``, 'string') }}",
+            "seri": "={{$fromAI('seri','','string')}}",
+            "model": "={{$fromAI('model','','string')}}",
+            "yil": "={{$fromAI('yil','','string')}}",
+            "motorGucu": "={{$fromAI('motorGucu','','string')}}",
+            "vites": "={{$fromAI('vites','','string')}}",
+            "boya": "={{$fromAI('boya','','string')}}",
+            "degisen": "={{$fromAI('degisen','','string')}}",
+            "fiyat": "={{$fromAI('fiyat','','string')}}",
+            "km": "={{$fromAI('km','','string')}}",
+            "yakit": "={{$fromAI('yakit','','string')}}",
+            "uid": "={{ $fromAI('uid', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "uid",
+              "displayName": "uid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "marka",
+              "displayName": "marka",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "seri",
+              "displayName": "seri",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "model",
+              "displayName": "model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "vites",
+              "displayName": "vites",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "motorGucu",
+              "displayName": "motorGucu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "yil",
+              "displayName": "yil",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "yakit",
+              "displayName": "yakit",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "km",
+              "displayName": "km",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fiyat",
+              "displayName": "fiyat",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "degisen",
+              "displayName": "degisen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "boya",
+              "displayName": "boya",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        1312,
+        672
+      ],
+      "id": "d5d4816b-ef0a-4207-9c04-135d772842aa",
+      "name": "Add_CRM",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "E5vo2bo5jTA2G5mm",
+          "name": "Galeri_Otomasyon_Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        64,
+        192
+      ],
+      "id": "a96feb1b-dfe2-4fab-9d4d-45b5708890e5",
+      "name": "Telegram Trigger",
+      "webhookId": "183cd640-70c4-4286-ab8b-3ccb303140d0",
+      "credentials": {
+        "telegramApi": {
+          "id": "xTaSN4JJejH191yT",
+          "name": "Galeri_Otomasyon_Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.voice.file_id }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        624,
+        96
+      ],
+      "id": "a9a8f053-41a5-4052-b8a5-40f9bfaffcff",
+      "name": "Voice",
+      "webhookId": "dda23c0c-8144-4981-8020-342a56ae844a",
+      "credentials": {
+        "telegramApi": {
+          "id": "xTaSN4JJejH191yT",
+          "name": "Galeri_Otomasyon_Bot"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Voice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice or Text": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Speech to Text": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Window Buffer Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Assistant",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Assistant": {
+      "main": [
+        [
+          {
+            "node": "Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit_CRM": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Assistant",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read_CRM": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Assistant",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Assistant",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "AI Assistant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete_CRM": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Assistant",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add_CRM": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Assistant",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Voice or Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice": {
+      "main": [
+        [
+          {
+            "node": "Speech to Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "4aa38883-4107-495b-9737-050b802d613e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e2f924363634f24cb2ab4db9b6e1a61e083de7c308f6e29b61451421ac65f51c"
+  },
+  "id": "r3TbAiI7PoOLyMDU",
+  "tags": []
+}

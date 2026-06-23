@@ -1,0 +1,161 @@
+{
+  "name": "Dürüle Yorum Takip Sistemi v1.0",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🍖 Dürüle Yorum Takip Sistemi\n\nGoogle Maps yorumlarını günlük çeker, Gemini AI ile analiz eder,\nolumsuz yorumları Telegram ile bildirir.\n\n**API:** SerpAPI (100/ay ücretsiz) + Gemini (ücretsiz)\n**Sıklık:** Her gün 09:00\n**Kurulum:** SerpAPI Key + Gemini Key + Sheets + Telegram",
+        "height": 220, "width": 440, "color": 6
+      },
+      "id": "sticky", "name": "Proje Bilgi",
+      "type": "n8n-nodes-base.stickyNote", "typeVersion": 1,
+      "position": [40, -60]
+    },
+    {
+      "parameters": { "rule": { "interval": [{ "triggerAtHour": 9 }] } },
+      "id": "node-schedule", "name": "Her Gün 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2,
+      "position": [80, 340]
+    },
+    {
+      "parameters": {
+        "url": "=https://serpapi.com/search.json?engine=google_maps&q=D%C3%BCr%C3%BCle+d%C3%BCr%C3%BCm&hl=tr&api_key=SERPAPI_KEY_BURAYA",
+        "method": "GET",
+        "options": { "timeout": 30000 }
+      },
+      "id": "node-search", "name": "Google Maps Ara",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
+      "position": [300, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst results = data.local_results || [];\nif (results.length === 0) throw new Error('Dükkan bulunamadi!');\nconst p = results[0];\nreturn [{json:{dataId:p.data_id||'',title:p.title||'',rating:p.rating||0,totalReviews:p.reviews||0,address:p.address||''}}];"
+      },
+      "id": "node-extract", "name": "Dükkan Bilgisi Çıkar",
+      "type": "n8n-nodes-base.code", "typeVersion": 2,
+      "position": [520, 340]
+    },
+    {
+      "parameters": {
+        "url": "=https://serpapi.com/search.json?engine=google_maps_reviews&data_id={{ $json.dataId }}&sort_by=newestFirst&hl=tr&api_key=SERPAPI_KEY_BURAYA",
+        "method": "GET",
+        "options": { "timeout": 30000 }
+      },
+      "id": "node-reviews", "name": "Yorumları Çek",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
+      "position": [740, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst info = $('Dükkan Bilgisi Çıkar').first().json;\nconst reviews = data.reviews || [];\nconst tarih = new Date().toLocaleDateString('tr-TR');\nif (reviews.length === 0) return [{json:{promptText:'Yorum yok',yorumlar:[],tarih,dukkan:info.title,puan:info.rating}}];\nconst yorumlar = reviews.slice(0,10).map((r,i)=>({\n  sira:i+1, yazar:r.user?.name||'Anonim', puan:r.rating||0,\n  yTarih:r.date||'', metin:(r.snippet||r.extracted_snippet?.original||'').substring(0,300)\n}));\nconst txt = yorumlar.map(y=>y.sira+'.['+y.puan+'/5]'+y.yazar+':'+y.metin).join('|||');\nconst promptText='Sen restoran yorum analiz uzmanisin. Turkce yanit ver. Dukkan:'+info.title+' ('+info.rating+'/5). '+yorumlar.length+' yorumu analiz et: '+txt+'. Her yorum icin JSON dizisi ver (SADECE JSON): [{\"sira\":1,\"duygu\":\"Olumlu/Olumsuz/Notr\",\"kategori\":\"Yemek/Servis/Hijyen/Fiyat/Ortam/Genel\",\"ozet\":\"Kisa ozet\",\"oneri\":\"Dukkan sahibine oneri\",\"acil\":true/false}] Kurallar: 1-2 puan=Olumsuz+acil. 4-5=Olumlu. Hijyen sikayeti=her zaman acil.';\nreturn [{json:{promptText,yorumlar,tarih,dukkan:info.title,puan:info.rating,toplamYorum:info.totalReviews}}];"
+      },
+      "id": "node-prepare", "name": "Yorumları Hazırla",
+      "type": "n8n-nodes-base.code", "typeVersion": 2,
+      "position": [960, 340]
+    },
+    {
+      "parameters": { "amount": 2, "unit": "seconds" },
+      "id": "node-wait", "name": "Rate Limit",
+      "type": "n8n-nodes-base.wait", "typeVersion": 1.1,
+      "position": [1180, 340]
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=GEMINI_KEY_BURAYA",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "Content-Type", "value": "application/json; charset=utf-8" }] },
+        "sendBody": true, "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\":[{\"parts\":[{\"text\":\"{{ $json.promptText }}\"}]}],\n  \"generationConfig\":{\"temperature\":0.2,\"maxOutputTokens\":2048}\n}",
+        "options": { "timeout": 45000 }
+      },
+      "id": "node-gemini", "name": "Gemini AI Analiz",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
+      "position": [1400, 340]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const gemini=$input.first().json;\nconst prev=$('Rate Limit').first().json;\nconst yorumlar=prev.yorumlar||[];\nlet analizler=[];\ntry{\n  let t=gemini.candidates[0].content.parts[0].text;\n  const m=t.match(/\\[\\s*\\{[\\s\\S]*\\}\\s*\\]/);\n  if(m) analizler=JSON.parse(m[0]);\n}catch(e){\n  analizler=yorumlar.map((_,i)=>({sira:i+1,duygu:'Notr',kategori:'Genel',ozet:'Analiz yapilamadi',oneri:'',acil:false}));\n}\nconst sonuclar=[];\nlet olumsuzVar=false;\nfor(let i=0;i<yorumlar.length;i++){\n  const y=yorumlar[i];\n  const a=analizler[i]||{duygu:'Notr',kategori:'Genel',ozet:'',oneri:'',acil:false};\n  if(a.duygu==='Olumsuz'||a.acil) olumsuzVar=true;\n  sonuclar.push({json:{\n    tarih:prev.tarih,dukkan:prev.dukkan,genelPuan:prev.puan,\n    yazar:y.yazar,puan:y.puan,yorumTarihi:y.yTarih,yorum:y.metin,\n    duygu:a.duygu||'Notr',kategori:a.kategori||'Genel',\n    ozet:a.ozet||'',oneri:a.oneri||'',acil:a.acil?'Evet':'Hayir',olumsuzVar\n  }});\n}\nreturn sonuclar.length>0?sonuclar:[{json:{tarih:prev.tarih,dukkan:prev.dukkan,yazar:'Yok',puan:0,yorum:'Yeni yorum yok',duygu:'Notr',kategori:'Genel',ozet:'',oneri:'',acil:'Hayir',olumsuzVar:false}}];"
+      },
+      "id": "node-parse", "name": "Sonuçları Ayrıştır",
+      "type": "n8n-nodes-base.code", "typeVersion": 2,
+      "position": [1620, 340]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "SHEETS_ID_BURAYA", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Yorum Log", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Tarih": "={{ $json.tarih }}",
+            "Yazar": "={{ $json.yazar }}",
+            "Puan": "={{ $json.puan }}",
+            "Yorum Tarihi": "={{ $json.yorumTarihi }}",
+            "Yorum": "={{ $json.yorum }}",
+            "Duygu": "={{ $json.duygu }}",
+            "Kategori": "={{ $json.kategori }}",
+            "Ozet": "={{ $json.ozet }}",
+            "Oneri": "={{ $json.oneri }}",
+            "Acil": "={{ $json.acil }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "node-sheets", "name": "Sheets Yorum Log",
+      "type": "n8n-nodes-base.googleSheets", "typeVersion": 4,
+      "position": [1840, 340]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "id": "neg", "leftValue": "={{ $json.olumsuzVar }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "node-if", "name": "Olumsuz Var mı?",
+      "type": "n8n-nodes-base.if", "typeVersion": 2,
+      "position": [2060, 340]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items=$input.all();\nconst d0=items[0]?.json||{};\nlet m='\\ud83d\\udea8 OLUMSUZ YORUM TESPIT EDILDI!\\n\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\n';\nm+='\\ud83c\\udf56 '+(d0.dukkan||'Durule')+' | \\u2b50 '+(d0.genelPuan||'')+'/5\\n';\nm+='\\ud83d\\udcc5 '+(d0.tarih||'')+'\\n\\n';\nconst neg=items.filter(i=>i.json.duygu==='Olumsuz'||i.json.acil==='Evet');\nneg.forEach(item=>{\n  const d=item.json;\n  const e=d.acil==='Evet'?'\\ud83d\\udd34':'\\ud83d\\udfe1';\n  m+=e+' '+d.yazar+' ('+d.puan+'/5)\\n';\n  m+='   \\ud83d\\udcac '+d.yorum.substring(0,150)+'\\n';\n  m+='   \\ud83d\\udcdd '+d.ozet+'\\n';\n  m+='   \\ud83d\\udca1 '+d.oneri+'\\n\\n';\n});\nm+='\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\n\\ud83e\\udd16 Durule Yorum Takip Sistemi';\nreturn [{json:{mesaj:m}}];"
+      },
+      "id": "node-format", "name": "Bildirim Hazırla",
+      "type": "n8n-nodes-base.code", "typeVersion": 2,
+      "position": [2280, 240]
+    },
+    {
+      "parameters": {
+        "chatId": "TELEGRAM_CHAT_ID_BURAYA",
+        "text": "={{ $json.mesaj }}",
+        "additionalFields": {}
+      },
+      "id": "node-tg", "name": "Telegram Bildirim",
+      "type": "n8n-nodes-base.telegram", "typeVersion": 1.2,
+      "position": [2500, 240],
+      "credentials": {
+        "telegramApi": { "id": "TELEGRAM_CREDENTIAL_ID", "name": "Telegram Bot" }
+      }
+    }
+  ],
+  "connections": {
+    "Her Gün 09:00": { "main": [[{ "node": "Google Maps Ara", "type": "main", "index": 0 }]] },
+    "Google Maps Ara": { "main": [[{ "node": "Dükkan Bilgisi Çıkar", "type": "main", "index": 0 }]] },
+    "Dükkan Bilgisi Çıkar": { "main": [[{ "node": "Yorumları Çek", "type": "main", "index": 0 }]] },
+    "Yorumları Çek": { "main": [[{ "node": "Yorumları Hazırla", "type": "main", "index": 0 }]] },
+    "Yorumları Hazırla": { "main": [[{ "node": "Rate Limit", "type": "main", "index": 0 }]] },
+    "Rate Limit": { "main": [[{ "node": "Gemini AI Analiz", "type": "main", "index": 0 }]] },
+    "Gemini AI Analiz": { "main": [[{ "node": "Sonuçları Ayrıştır", "type": "main", "index": 0 }]] },
+    "Sonuçları Ayrıştır": { "main": [[{ "node": "Sheets Yorum Log", "type": "main", "index": 0 }]] },
+    "Sheets Yorum Log": { "main": [[{ "node": "Olumsuz Var mı?", "type": "main", "index": 0 }]] },
+    "Olumsuz Var mı?": { "main": [[{ "node": "Bildirim Hazırla", "type": "main", "index": 0 }]], "false": [[]] },
+    "Bildirim Hazırla": { "main": [[{ "node": "Telegram Bildirim", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false }
+}

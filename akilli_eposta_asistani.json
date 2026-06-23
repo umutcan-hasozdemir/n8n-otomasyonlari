@@ -1,0 +1,131 @@
+{
+  "name": "Akıllı Anket Tarayıcı (OCR)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 📝 Akıllı Anket Tarayıcı\n\nHasta Memnuniyet Anketlerini okur, el yazısı ve işaretli puanları çıkarıp Excel/Sheets tablosuna sütun sütun kaydeder.",
+        "height": 220,
+        "width": 380,
+        "color": 6
+      },
+      "id": "sticky-info",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, -160]
+    },
+    {
+      "parameters": {
+        "formTitle": "Anket Yükleme Sistemi",
+        "formDescription": "Hasta memnuniyet anketinin fotoğrafını yükleyin.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Anket Fotoğrafı",
+              "fieldType": "file",
+              "requiredField": true,
+              "acceptFileTypes": "image/*,application/pdf"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger-form",
+      "name": "Anket Yükle",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [40, 80]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const item = $input.first();\nconst binaryKeys = Object.keys(item.binary || {});\nif (binaryKeys.length === 0) throw new Error('Görsel bulunamadı');\n\nconst binaryKey = binaryKeys[0];\nconst binaryData = item.binary[binaryKey];\n\nreturn [{\n  json: {\n    mimeType: binaryData.mimeType,\n    base64: binaryData.data,\n    fileName: binaryData.fileName\n  }\n}];"
+      },
+      "id": "node-prepare",
+      "name": "Görseli Hazırla",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 80]
+    },
+    {
+      "parameters": {
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=BURAYA_GEMINI_API_KEY_GIRIN",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json; charset=utf-8" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"Sen uzman bir veri giriş asistanısın. Yüklenen 'Hasta Memnuniyet Anketi' görselini incele. İçindeki el yazısı bilgileri ve işaretli puanlamaları bul. Yanıt verirken Çince veya bozuk karakter KULLANMA, düzgün Türkçe karakterler (ç, ğ, ı, ö, ş, ü) kullan. SADECE aşağıdaki JSON formatında veri döndür:\\n\\n{\\n  \\\"hasta_adi\\\": \\\"El yazısı ile yazılan İsim / Soyad\\\",\\n  \\\"telefon\\\": \\\"El yazısı ile yazılan Telefon Numarası\\\",\\n  \\\"ulke\\\": \\\"Ülke bilgisi\\\",\\n  \\\"anket_tarihi\\\": \\\"Tarih kısmı\\\",\\n  \\\"hekim_adi\\\": \\\"Hekim Adı Soyadı kısmı\\\",\\n  \\\"hekim_puani\\\": Hekim için işaretlenen 1 ile 10 arasındaki puan (Sayı),\\n  \\\"soru1\\\": 1. soru için işaretlenen puan (0-5 arası Sayı),\\n  \\\"soru2\\\": 2. soru için işaretlenen puan,\\n  \\\"soru3\\\": 3. soru için işaretlenen puan,\\n  \\\"soru4\\\": 4. soru için işaretlenen puan,\\n  \\\"soru5\\\": 5. soru için işaretlenen puan,\\n  \\\"soru6\\\": 6. soru için işaretlenen puan,\\n  \\\"soru7\\\": 7. soru için işaretlenen puan\\n}\"\n        },\n        {\n          \"inlineData\": {\n            \"mimeType\": \"{{ $json.mimeType }}\",\n            \"data\": \"{{ $json.base64 }}\"\n          }\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": { \"temperature\": 0.1 }\n}",
+        "options": { "timeout": 45000 }
+      },
+      "id": "node-gemini",
+      "name": "Gemini OCR (JSON)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 80]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const gemini = $input.first().json;\nconst sisteme_giris = new Date().toLocaleString('tr-TR');\n\nlet sonuc = {};\ntry {\n  let metin = gemini.candidates[0].content.parts[0].text;\n  const jsonMatch = metin.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) sonuc = JSON.parse(jsonMatch[0]);\n} catch (e) {\n  sonuc = {};\n}\n\nreturn [{\n  json: {\n    Sisteme_Giris: sisteme_giris,\n    Hasta_Adi: sonuc.hasta_adi || 'Okunamadı',\n    Telefon: sonuc.telefon || '',\n    Ulke: sonuc.ulke || '',\n    Anket_Tarihi: sonuc.anket_tarihi || '',\n    Hekim_Adi: sonuc.hekim_adi || '',\n    Hekim_Puani: sonuc.hekim_puani || 0,\n    Soru_1: sonuc.soru1 || 0,\n    Soru_2: sonuc.soru2 || 0,\n    Soru_3: sonuc.soru3 || 0,\n    Soru_4: sonuc.soru4 || 0,\n    Soru_5: sonuc.soru5 || 0,\n    Soru_6: sonuc.soru6 || 0,\n    Soru_7: sonuc.soru7 || 0\n  }\n}];"
+      },
+      "id": "node-parse",
+      "name": "Verileri Ayrıştır",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 80]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "GOOGLE_SHEETS_DOCUMENT_ID_BURAYA", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Anket Sonuclari", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Sisteme Giriş": "={{ $json.Sisteme_Giris }}",
+            "Hasta Adı": "={{ $json.Hasta_Adi }}",
+            "Telefon": "={{ $json.Telefon }}",
+            "Ülke": "={{ $json.Ulke }}",
+            "Anket Tarihi": "={{ $json.Anket_Tarihi }}",
+            "Hekim Adı": "={{ $json.Hekim_Adi }}",
+            "Hekim Puanı": "={{ $json.Hekim_Puani }}",
+            "Soru 1 (Bilgilendirme)": "={{ $json.Soru_1 }}",
+            "Soru 2 (Randevu)": "={{ $json.Soru_2 }}",
+            "Soru 3 (Personel)": "={{ $json.Soru_3 }}",
+            "Soru 4 (Tedavi Sonucu)": "={{ $json.Soru_4 }}",
+            "Soru 5 (Maliyet)": "={{ $json.Soru_5 }}",
+            "Soru 6 (Klinik Donanımı)": "={{ $json.Soru_6 }}",
+            "Soru 7 (Tavsiye)": "={{ $json.Soru_7 }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "node-sheets",
+      "name": "Excel'e (Sheets) Kaydet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [920, 80]
+    }
+  ],
+  "connections": {
+    "Anket Yükle": {
+      "main": [[{ "node": "Görseli Hazırla", "type": "main", "index": 0 }]]
+    },
+    "Görseli Hazırla": {
+      "main": [[{ "node": "Gemini OCR (JSON)", "type": "main", "index": 0 }]]
+    },
+    "Gemini OCR (JSON)": {
+      "main": [[{ "node": "Verileri Ayrıştır", "type": "main", "index": 0 }]]
+    },
+    "Verileri Ayrıştır": {
+      "main": [[{ "node": "Excel'e (Sheets) Kaydet", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false }
+}

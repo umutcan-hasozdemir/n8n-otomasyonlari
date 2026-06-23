@@ -1,0 +1,433 @@
+{
+  "name": "Sahibinden İlan Takip v2 (Komutlu)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "minutes", "minutesInterval": 10 }] }
+      },
+      "id": "schedule1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "Takipler!A:E"
+      },
+      "id": "readTakip",
+      "name": "Takipleri Oku",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const takipler = items.map(i => i.json);\nconst aktifler = takipler.filter(t => String(t.aktif).toUpperCase() === 'TRUE');\nif (aktifler.length === 0) {\n  return [{ json: { url: 'https://www.sahibinden.com/satilik-daire/gaziantep', max_fiyat: 0 } }];\n}\nreturn aktifler.map(t => ({\n  json: {\n    url: `https://www.sahibinden.com/${t.tip}/${t.sehir}`,\n    max_fiyat: parseInt(t.max_fiyat) || 0\n  }\n}));"
+      },
+      "id": "urlOlustur",
+      "name": "URL Olustur",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": { "value": "={{ Math.floor(Math.random() * 10) + 5 }}" },
+      "id": "wait1",
+      "name": "Random Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "headers": {
+            "User-Agent": "Mozilla/5.0",
+            "Accept-Language": "tr-TR,tr;q=0.9",
+            "Accept": "text/html"
+          }
+        }
+      },
+      "id": "http1",
+      "name": "Fetch Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const html = $json.body;\nconst regex = /data-id=\"(\\d+)\"[\\s\\S]*?<a[^>]*title=\"([^\"]+)\"[\\s\\S]*?<span class=\"price\">([^<]+)<\\/span>/g;\nlet match, results = [];\nwhile ((match = regex.exec(html)) !== null) {\n  results.push({ ilan_id: match[1], baslik: match[2], fiyat: match[3], link: 'https://www.sahibinden.com/ilan/' + match[1] });\n}\nreturn results.map(item => ({ json: item }));"
+      },
+      "id": "parse1",
+      "name": "Parse Listings",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const maxFiyat = $node['URL Olustur'].json.max_fiyat;\nif (!maxFiyat || maxFiyat === 0) return items;\nreturn items.filter(item => {\n  const f = parseInt((item.json.fiyat || '').replace(/[^0-9]/g, ''));\n  return !isNaN(f) && f <= maxFiyat;\n});"
+      },
+      "id": "fiyatFiltre",
+      "name": "Fiyat Filtre",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "Gönderilen İlanlar!A:D",
+        "lookupColumn": "ilan_id",
+        "lookupValue": "={{ $json.ilan_id }}"
+      },
+      "id": "check1",
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [1600, 300]
+    },
+    {
+      "parameters": {
+        "conditions": { "boolean": [{ "value1": "={{ $json.length === 0 }}" }] }
+      },
+      "id": "if1",
+      "name": "Is New?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1800, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "CHAT_ID",
+        "text": "={{ `🏠 ${$json.baslik}\\n💰 ${$json.fiyat}\\n🔗 ${$json.link}` }}"
+      },
+      "id": "tgSend1",
+      "name": "Send Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "Gönderilen İlanlar!A:D",
+        "options": {},
+        "data": [{ "ilan_id": "={{ $json.ilan_id }}", "baslik": "={{ $json.baslik }}", "fiyat": "={{ $json.fiyat }}", "link": "={{ $json.link }}" }]
+      },
+      "id": "saveGonder",
+      "name": "Save Gönderilen",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [2200, 200]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "İlanlar!A:I",
+        "options": {},
+        "data": [{ "sira_no": "={{ $json.sira_no }}", "ilan_id": "={{ $json.ilan_id }}", "baslik": "={{ $json.baslik }}", "fiyat": "={{ $json.fiyat }}", "konum": "=Gaziantep", "link": "={{ $json.link }}", "bulunma_tarihi": "={{ new Date().toLocaleString('tr-TR') }}", "durum": "yeni", "not": "" }]
+      },
+      "id": "saveIlan",
+      "name": "Save İlanlar",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [2200, 400]
+    },
+    {
+      "parameters": { "updates": ["message"] },
+      "id": "tgTrigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [200, 700]
+    },
+    {
+      "parameters": {
+        "functionCode": "const text = $json.message.text || '';\nconst chatId = $json.message.chat.id;\nconst parts = text.trim().split(/\\s+/);\nconst cmd = parts[0].toLowerCase();\nlet r = { command: cmd, chatId };\nif (cmd === '/takip') { r.tip = parts[1]||'satilik-daire'; r.sehir = parts[2]||'gaziantep'; r.maxFiyat = parts[3]||'0'; }\nif (cmd === '/begendim' || cmd === '/gecildi') { r.siraNo = parts[1]||''; r.yeniDurum = cmd === '/begendim' ? 'Beğenildi' : 'Geçildi'; r.rowNumber = parseInt(parts[1]||0)+1; }\nif (cmd === '/notekle') { r.siraNo = parts[1]||''; r.notText = parts.slice(2).join(' '); r.rowNumber = parseInt(parts[1]||0)+1; }\nif (cmd === '/takipsil') { r.takipNo = parts[1]||''; r.rowNumber = parseInt(parts[1]||0)+1; }\nreturn [{ json: r }];"
+      },
+      "id": "komutParse",
+      "name": "Komut Parse",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [400, 700]
+    },
+    {
+      "parameters": {
+        "dataPropertyName": "command",
+        "rules": {
+          "rules": [
+            { "value": "/takip" },
+            { "value": "/begendim" },
+            { "value": "/gecildi" },
+            { "value": "/notekle" },
+            { "value": "/arsiv" },
+            { "value": "/takipler" },
+            { "value": "/takipsil" },
+            { "value": "/takiptemizle" }
+          ]
+        }
+      },
+      "id": "switch1",
+      "name": "Komut Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [600, 700]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "Takipler!A:E",
+        "options": {},
+        "data": [{ "tip": "={{ $json.tip }}", "sehir": "={{ $json.sehir }}", "max_fiyat": "={{ $json.maxFiyat }}", "eklenme_tarihi": "={{ new Date().toLocaleString('tr-TR') }}", "aktif": "TRUE" }]
+      },
+      "id": "saveTakip",
+      "name": "Takip Kaydet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [800, 550]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ `✅ Takip eklendi!\\n\\n📋 Tip: ${$json.tip}\\n📍 Şehir: ${$json.sehir}\\n💰 Max Fiyat: ${$json.maxFiyat !== '0' ? $json.maxFiyat + ' TL' : 'Sınırsız'}\\n\\n🔄 Her 10 dk kontrol edilecek.` }}"
+      },
+      "id": "tgTakipOnay",
+      "name": "Takip Onay",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1000, 550]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "={{ `İlanlar!H${$json.rowNumber}` }}",
+        "options": {},
+        "data": [{ "durum": "={{ $json.yeniDurum }}" }]
+      },
+      "id": "durumGuncelle",
+      "name": "Durum Güncelle",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [800, 700]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ `✅ İlan #${$json.siraNo} → \"${$json.yeniDurum}\" olarak güncellendi!` }}"
+      },
+      "id": "tgDurumOnay",
+      "name": "Durum Onay",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1000, 700]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "={{ `İlanlar!I${$json.rowNumber}` }}",
+        "options": {},
+        "data": [{ "not": "={{ $json.notText }}" }]
+      },
+      "id": "notGuncelle",
+      "name": "Not Güncelle",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [800, 850]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ `📝 İlan #${$json.siraNo} için not eklendi:\\n\"${$json.notText}\"` }}"
+      },
+      "id": "tgNotOnay",
+      "name": "Not Onay",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1000, 850]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "İlanlar!A:I"
+      },
+      "id": "arsivOku",
+      "name": "Arşiv Oku",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [800, 1000]
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows = items.map(i => i.json);\nconst chatId = $node['Komut Parse'].json.chatId;\nif (rows.length === 0) return [{ json: { chatId, message: '📭 Kayıtlı ilan yok.' } }];\nlet msg = '📋 İLAN ARŞİVİ\\n━━━━━━━━━━━━━━━\\n\\n';\nconst son20 = rows.slice(-20);\nfor (const r of son20) {\n  let e = '🆕';\n  if (r.durum === 'Beğenildi') e = '❤️';\n  if (r.durum === 'Geçildi') e = '❌';\n  msg += `${e} #${r.sira_no} ${r.baslik}\\n   💰 ${r.fiyat}`;\n  if (r.not) msg += ` | 📝 ${r.not}`;\n  msg += `\\n   🔗 ${r.link}\\n\\n`;\n}\nmsg += `━━━━━━━━━━━━━━━\\n📊 Toplam: ${rows.length} ilan`;\nif (msg.length > 4000) msg = msg.substring(0, 3950) + '\\n\\n... (devamı var)';\nreturn [{ json: { chatId, message: msg } }];"
+      },
+      "id": "arsivFormat",
+      "name": "Arşiv Formatla",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1000, 1000]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}"
+      },
+      "id": "tgArsiv",
+      "name": "Arşiv Gönder",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1200, 1000]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "Takipler!A:E"
+      },
+      "id": "takiplerOku",
+      "name": "Takipler Listele",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [800, 1150]
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows = items.map(i => i.json);\nconst chatId = $node['Komut Parse'].json.chatId;\nif (rows.length === 0) return [{ json: { chatId, message: '📭 Henüz takip kriteri eklenmemiş.\\nEklemek için: /takip kiralik-daire gaziantep 8000' } }];\nlet msg = '📋 AKTİF TAKİPLER\\n━━━━━━━━━━━━━━━\\n\\n';\nrows.forEach((r, i) => {\n  const aktif = String(r.aktif).toUpperCase() === 'TRUE';\n  const emoji = aktif ? '✅' : '⏸️';\n  msg += `${emoji} #${i+1} ${r.tip} - ${r.sehir}\\n   💰 Max: ${r.max_fiyat && r.max_fiyat !== '0' ? r.max_fiyat + ' TL' : 'Sınırsız'}\\n   📅 ${r.eklenme_tarihi || '-'}\\n\\n`;\n});\nmsg += '━━━━━━━━━━━━━━━\\n❌ Silmek için: /takipsil 1\\n🗑️ Hepsini silmek: /takiptemizle';\nreturn [{ json: { chatId, message: msg } }];"
+      },
+      "id": "takiplerFormat",
+      "name": "Takipler Formatla",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1000, 1150]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}"
+      },
+      "id": "tgTakipler",
+      "name": "Takipler Gönder",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1200, 1150]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "={{ `Takipler!E${$json.rowNumber}` }}",
+        "options": {},
+        "data": [{ "aktif": "FALSE" }]
+      },
+      "id": "takipSil",
+      "name": "Takip Pasif Yap",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [800, 1300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ `🗑️ Takip #${$json.takipNo} pasif yapıldı!\\n\\nAktif takiplerini görmek için: /takipler` }}"
+      },
+      "id": "tgTakipSil",
+      "name": "Takip Sil Onay",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1000, 1300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "Takipler!A:E"
+      },
+      "id": "temizleOku",
+      "name": "Temizle Oku",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [800, 1450]
+    },
+    {
+      "parameters": {
+        "functionCode": "const rows = items.map(i => i.json);\nconst chatId = $node['Komut Parse'].json.chatId;\nif (rows.length === 0) return [{ json: { chatId, message: '📭 Zaten hiç takip yok.', skipUpdate: true } }];\nconst updates = rows.map((r, i) => ({ json: { range: `Takipler!E${i+2}`, value: 'FALSE' } }));\nupdates[updates.length-1].json.chatId = chatId;\nupdates[updates.length-1].json.message = `🗑️ Toplam ${rows.length} takip pasif yapıldı!\\n\\nYeni takip eklemek için:\\n/takip kiralik-daire gaziantep 8000`;\nreturn updates;"
+      },
+      "id": "temizleHazirla",
+      "name": "Temizle Hazırla",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1000, 1450]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "={{ $json.range }}",
+        "options": {},
+        "data": [{ "aktif": "FALSE" }]
+      },
+      "id": "temizleGuncelle",
+      "name": "Temizle Güncelle",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [1200, 1450]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}"
+      },
+      "id": "tgTemizle",
+      "name": "Temizle Onay",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1400, 1450]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": { "main": [[{ "node": "Takipleri Oku", "type": "main", "index": 0 }]] },
+    "Takipleri Oku": { "main": [[{ "node": "URL Olustur", "type": "main", "index": 0 }]] },
+    "URL Olustur": { "main": [[{ "node": "Random Wait", "type": "main", "index": 0 }]] },
+    "Random Wait": { "main": [[{ "node": "Fetch Page", "type": "main", "index": 0 }]] },
+    "Fetch Page": { "main": [[{ "node": "Parse Listings", "type": "main", "index": 0 }]] },
+    "Parse Listings": { "main": [[{ "node": "Fiyat Filtre", "type": "main", "index": 0 }]] },
+    "Fiyat Filtre": { "main": [[{ "node": "Check Duplicate", "type": "main", "index": 0 }]] },
+    "Check Duplicate": { "main": [[{ "node": "Is New?", "type": "main", "index": 0 }]] },
+    "Is New?": { "main": [[{ "node": "Send Telegram", "type": "main", "index": 0 }], []] },
+    "Send Telegram": { "main": [[{ "node": "Save Gönderilen", "type": "main", "index": 0 }, { "node": "Save İlanlar", "type": "main", "index": 0 }]] },
+    "Telegram Trigger": { "main": [[{ "node": "Komut Parse", "type": "main", "index": 0 }]] },
+    "Komut Parse": { "main": [[{ "node": "Komut Switch", "type": "main", "index": 0 }]] },
+    "Komut Switch": { "main": [
+      [{ "node": "Takip Kaydet", "type": "main", "index": 0 }],
+      [{ "node": "Durum Güncelle", "type": "main", "index": 0 }],
+      [{ "node": "Durum Güncelle", "type": "main", "index": 0 }],
+      [{ "node": "Not Güncelle", "type": "main", "index": 0 }],
+      [{ "node": "Arşiv Oku", "type": "main", "index": 0 }],
+      [{ "node": "Takipler Listele", "type": "main", "index": 0 }],
+      [{ "node": "Takip Pasif Yap", "type": "main", "index": 0 }],
+      [{ "node": "Temizle Oku", "type": "main", "index": 0 }]
+    ]},
+    "Takip Kaydet": { "main": [[{ "node": "Takip Onay", "type": "main", "index": 0 }]] },
+    "Durum Güncelle": { "main": [[{ "node": "Durum Onay", "type": "main", "index": 0 }]] },
+    "Not Güncelle": { "main": [[{ "node": "Not Onay", "type": "main", "index": 0 }]] },
+    "Arşiv Oku": { "main": [[{ "node": "Arşiv Formatla", "type": "main", "index": 0 }]] },
+    "Arşiv Formatla": { "main": [[{ "node": "Arşiv Gönder", "type": "main", "index": 0 }]] },
+    "Takipler Listele": { "main": [[{ "node": "Takipler Formatla", "type": "main", "index": 0 }]] },
+    "Takipler Formatla": { "main": [[{ "node": "Takipler Gönder", "type": "main", "index": 0 }]] },
+    "Takip Pasif Yap": { "main": [[{ "node": "Takip Sil Onay", "type": "main", "index": 0 }]] },
+    "Temizle Oku": { "main": [[{ "node": "Temizle Hazırla", "type": "main", "index": 0 }]] },
+    "Temizle Hazırla": { "main": [[{ "node": "Temizle Güncelle", "type": "main", "index": 0 }]] },
+    "Temizle Güncelle": { "main": [[{ "node": "Temizle Onay", "type": "main", "index": 0 }]] }
+  }
+}

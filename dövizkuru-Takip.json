@@ -1,0 +1,169 @@
+{
+  "name": "Döviz Kuru Takip ve Uyarı Botu",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "schedule1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.frankfurter.dev/v1/latest?from=TRY&to=USD,EUR",
+        "options": {}
+      },
+      "id": "httpDoviz",
+      "name": "Doviz Kurlari",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [400, 250]
+    },
+    {
+      "parameters": {
+        "url": "https://api.frankfurter.dev/v1/latest?from=XAU&to=TRY",
+        "options": {}
+      },
+      "id": "httpAltin",
+      "name": "Altin Kuru",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [400, 450]
+    },
+    {
+      "parameters": {
+        "functionCode": "// ═══════════════════════════════════════════\n// EŞİK DEĞERLERİ - BURADAN KOLAYCA DEĞİŞTİR\n// ═══════════════════════════════════════════\nconst THRESHOLDS = {\n  USD: { name: 'Dolar', emoji: '💵', upper: 38.00, lower: 36.00 },\n  EUR: { name: 'Euro', emoji: '💶', upper: 41.00, lower: 39.00 },\n  XAU: { name: 'Altın (ons)', emoji: '🪙', upper: 100000, lower: 85000 }\n};\n// ═══════════════════════════════════════════\n\nconst dovizData = $node['Doviz Kurlari'].json;\nconst altinData = $node['Altin Kuru'].json;\n\nconst rates = {};\nif (dovizData && dovizData.rates) {\n  rates.USD = dovizData.rates.USD ? parseFloat((1 / dovizData.rates.USD).toFixed(4)) : null;\n  rates.EUR = dovizData.rates.EUR ? parseFloat((1 / dovizData.rates.EUR).toFixed(4)) : null;\n}\nif (altinData && altinData.rates) {\n  rates.XAU = altinData.rates.TRY ? parseFloat(altinData.rates.TRY.toFixed(2)) : null;\n}\n\nconst today = new Date().toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' });\nconst now = new Date().toLocaleTimeString('tr-TR', { timeZone: 'Europe/Istanbul', hour: '2-digit', minute: '2-digit' });\n\nconst alerts = [];\nconst alertKeys = [];\n\nfor (const [currency, config] of Object.entries(THRESHOLDS)) {\n  const rate = rates[currency];\n  if (rate === null || rate === undefined) continue;\n  if (rate > config.upper) {\n    alerts.push({ key: `${currency}_upper`, text: `${config.emoji} ${config.name}: ${rate.toLocaleString('tr-TR')} TL\\n⬆️ Eşik değer ${config.upper.toLocaleString('tr-TR')} TL üzerine çıktı!` });\n    alertKeys.push(`${currency}_upper`);\n  }\n  if (rate < config.lower) {\n    alerts.push({ key: `${currency}_lower`, text: `${config.emoji} ${config.name}: ${rate.toLocaleString('tr-TR')} TL\\n⬇️ Eşik değer ${config.lower.toLocaleString('tr-TR')} TL altına düştü!` });\n    alertKeys.push(`${currency}_lower`);\n  }\n}\n\nlet message = '';\nif (alerts.length > 0) {\n  message = `🚨 DÖVİZ KURU UYARI 🚨\\n📅 ${today} - ⏰ ${now}\\n━━━━━━━━━━━━━━━━━━━━━\\n\\n`;\n  message += alerts.map(a => a.text).join('\\n\\n');\n  message += `\\n\\n━━━━━━━━━━━━━━━━━━━━━\\n📊 Güncel Kurlar:\\n💵 Dolar: ${rates.USD ? rates.USD.toLocaleString('tr-TR') : 'N/A'} TL\\n💶 Euro: ${rates.EUR ? rates.EUR.toLocaleString('tr-TR') : 'N/A'} TL\\n🪙 Altın: ${rates.XAU ? rates.XAU.toLocaleString('tr-TR') : 'N/A'} TL`;\n}\n\nreturn [{ json: { message, hasAlerts: alerts.length > 0, alertKeys, alertDate: today, rates, alertCount: alerts.length } }];"
+      },
+      "id": "code1",
+      "name": "Esik Kontrolu",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "Uyarı Geçmişi!A:D"
+      },
+      "id": "readSheet",
+      "name": "Uyari Gecmisi Oku",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const alertData = $node['Esik Kontrolu'].json;\nconst sheetData = items.map(i => i.json);\n\nif (!alertData.hasAlerts || !alertData.message) return [];\n\nconst today = alertData.alertDate;\nconst sentTodayKeys = new Set();\nfor (const row of sheetData) {\n  if (row.alert_date === today) sentTodayKeys.add(row.alert_key);\n}\n\nconst newAlertKeys = alertData.alertKeys.filter(key => !sentTodayKeys.has(key));\nif (newAlertKeys.length === 0) return [];\n\nreturn [{ json: { message: alertData.message, alertKeys: newAlertKeys, alertDate: today, rates: alertData.rates, shouldSend: true } }];"
+      },
+      "id": "code2",
+      "name": "Spam Kontrol",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.shouldSend }}"
+            }
+          ]
+        }
+      },
+      "id": "if1",
+      "name": "Uyari Var Mi?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = $json;\nconst rows = [];\nfor (const key of data.alertKeys) {\n  const currency = key.split('_')[0];\n  rows.push({ json: { alert_key: key, alert_date: data.alertDate, rate: data.rates[currency] || '', timestamp: new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' }) } });\n}\nreturn rows;"
+      },
+      "id": "code3",
+      "name": "Kayit Hazirla",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1400, 200]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "GOOGLE_SHEET_ID",
+        "range": "Uyarı Geçmişi!A:D",
+        "options": {},
+        "data": [
+          {
+            "alert_key": "={{ $json.alert_key }}",
+            "alert_date": "={{ $json.alert_date }}",
+            "rate": "={{ $json.rate }}",
+            "timestamp": "={{ $json.timestamp }}"
+          }
+        ]
+      },
+      "id": "writeSheet",
+      "name": "Uyari Kaydet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [1600, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "CHAT_ID",
+        "text": "={{ $node['Spam Kontrol'].json.message }}"
+      },
+      "id": "tg1",
+      "name": "Telegram Gonder",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1400, 400]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[
+        { "node": "Doviz Kurlari", "type": "main", "index": 0 },
+        { "node": "Altin Kuru", "type": "main", "index": 0 }
+      ]]
+    },
+    "Doviz Kurlari": {
+      "main": [[{ "node": "Esik Kontrolu", "type": "main", "index": 0 }]]
+    },
+    "Altin Kuru": {
+      "main": [[{ "node": "Esik Kontrolu", "type": "main", "index": 0 }]]
+    },
+    "Esik Kontrolu": {
+      "main": [[{ "node": "Uyari Gecmisi Oku", "type": "main", "index": 0 }]]
+    },
+    "Uyari Gecmisi Oku": {
+      "main": [[{ "node": "Spam Kontrol", "type": "main", "index": 0 }]]
+    },
+    "Spam Kontrol": {
+      "main": [[{ "node": "Uyari Var Mi?", "type": "main", "index": 0 }]]
+    },
+    "Uyari Var Mi?": {
+      "main": [
+        [
+          { "node": "Kayit Hazirla", "type": "main", "index": 0 },
+          { "node": "Telegram Gonder", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    },
+    "Kayit Hazirla": {
+      "main": [[{ "node": "Uyari Kaydet", "type": "main", "index": 0 }]]
+    }
+  }
+}
